@@ -53,226 +53,60 @@ fn parse_path(path: &str) -> Vec<PathToken> {
     tokens
 }
 
-struct JsonSpanFinder<'a> {
-    input: &'a str,
-    chars: std::iter::Peekable<std::str::CharIndices<'a>>,
+fn find_kdl_span(content: &str, tokens: &[PathToken]) -> Option<(usize, usize)> {
+    let doc = content.parse::<kdl::KdlDocument>().ok()?;
+    find_kdl_span_in_doc(&doc, tokens)
 }
 
-impl<'a> JsonSpanFinder<'a> {
-    fn new(input: &'a str) -> Self {
-        Self {
-            input,
-            chars: input.char_indices().peekable(),
-        }
+fn find_kdl_span_in_doc(doc: &kdl::KdlDocument, tokens: &[PathToken]) -> Option<(usize, usize)> {
+    if tokens.is_empty() {
+        return None;
     }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(&(_, c)) = self.chars.peek() {
-            if c.is_whitespace() {
-                self.chars.next();
+    let next_token = &tokens[0];
+    match next_token {
+        PathToken::Key(target_key) => {
+            let target_idx = if tokens.len() > 1 {
+                if let PathToken::Index(idx) = &tokens[1] {
+                    Some(*idx)
+                } else {
+                    None
+                }
             } else {
-                break;
-            }
-        }
-    }
+                None
+            };
 
-    fn find(&mut self, tokens: &[PathToken]) -> Option<(usize, usize)> {
-        self.skip_whitespace();
-        if tokens.is_empty() {
-            let start = self.chars.peek()?.0;
-            self.skip_value()?;
-            let end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
-            return Some((start, end));
-        }
-
-        let next_token = &tokens[0];
-        match next_token {
-            PathToken::Key(target_key) => {
-                if self.chars.peek()?.1 != '{' {
-                    return None;
-                }
-                self.chars.next(); // consume '{'
-                
-                loop {
-                    self.skip_whitespace();
-                    let next_c = self.chars.peek()?.1;
-                    if next_c == '}' {
-                        self.chars.next();
-                        break;
-                    }
-                    
-                    let _key_start = self.chars.peek()?.0;
-                    let key = self.parse_string()?;
-                    
-                    self.skip_whitespace();
-                    if self.chars.next()?.1 != ':' {
-                        return None;
-                    }
-                    self.skip_whitespace();
-                    
-                    if key == *target_key {
-                        if tokens.len() == 1 {
-                            let val_start = self.chars.peek()?.0;
-                            self.skip_value()?;
-                            let val_end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
-                            return Some((val_start, val_end));
-                        } else {
-                            return self.find(&tokens[1..]);
+            let nodes: Vec<&kdl::KdlNode> = doc.nodes().iter().filter(|n| n.name().value() == target_key).collect();
+            if let Some(idx) = target_idx {
+                let node = nodes.get(idx)?;
+                if tokens.len() == 2 {
+                    let span = node.span();
+                    return Some((span.offset(), span.offset() + span.len()));
+                } else {
+                    if let PathToken::Key(prop_key) = &tokens[2] {
+                        if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
+                            let span = entry.span();
+                            return Some((span.offset(), span.offset() + span.len()));
                         }
-                    } else {
-                        self.skip_value()?;
-                    }
-                    
-                    self.skip_whitespace();
-                    let comma_c = self.chars.peek()?.1;
-                    if comma_c == ',' {
-                        self.chars.next();
-                    } else if comma_c == '}' {
-                        // next iteration will handle loop break
-                    } else {
-                        return None;
                     }
                 }
-            }
-            PathToken::Index(target_idx) => {
-                if self.chars.peek()?.1 != '[' {
-                    return None;
-                }
-                self.chars.next(); // consume '['
-                
-                let mut current_idx = 0;
-                loop {
-                    self.skip_whitespace();
-                    let next_c = self.chars.peek()?.1;
-                    if next_c == ']' {
-                        self.chars.next();
-                        break;
-                    }
-                    
-                    if current_idx == *target_idx {
-                        if tokens.len() == 1 {
-                            let val_start = self.chars.peek()?.0;
-                            self.skip_value()?;
-                            let val_end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
-                            return Some((val_start, val_end));
-                        } else {
-                            return self.find(&tokens[1..]);
-                        }
-                    } else {
-                        self.skip_value()?;
-                    }
-                    
-                    self.skip_whitespace();
-                    let comma_c = self.chars.peek()?.1;
-                    if comma_c == ',' {
-                        self.chars.next();
-                        current_idx += 1;
-                    } else if comma_c == ']' {
-                        // next iteration will handle loop break
-                    } else {
-                        return None;
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn parse_string(&mut self) -> Option<String> {
-        self.skip_whitespace();
-        if self.chars.next()?.1 != '"' {
-            return None;
-        }
-        let mut s = String::new();
-        while let Some((_, c)) = self.chars.next() {
-            if c == '"' {
-                return Some(s);
-            } else if c == '\\' {
-                let escaped = self.chars.next()?.1;
-                s.push(escaped);
             } else {
-                s.push(c);
+                let node = nodes.first()?;
+                if tokens.len() == 1 {
+                    if let Some(entry) = node.entries().first() {
+                        let span = entry.span();
+                        return Some((span.offset(), span.offset() + span.len()));
+                    } else {
+                        let span = node.span();
+                        return Some((span.offset(), span.offset() + span.len()));
+                    }
+                } else if let Some(children) = node.children() {
+                    return find_kdl_span_in_doc(children, &tokens[1..]);
+                }
             }
         }
-        None
+        PathToken::Index(_) => {}
     }
-
-    fn skip_value(&mut self) -> Option<()> {
-        self.skip_whitespace();
-        let &(_, c) = self.chars.peek()?;
-        match c {
-            '{' => {
-                self.chars.next();
-                loop {
-                    self.skip_whitespace();
-                    let next_c = self.chars.peek()?.1;
-                    if next_c == '}' {
-                        self.chars.next();
-                        break;
-                    }
-                    self.parse_string()?;
-                    self.skip_whitespace();
-                    if self.chars.next()?.1 != ':' {
-                        return None;
-                    }
-                    self.skip_value()?;
-                    self.skip_whitespace();
-                    let comma = self.chars.peek()?.1;
-                    if comma == ',' {
-                        self.chars.next();
-                    } else if comma == '}' {
-                        // will break next
-                    } else {
-                        return None;
-                    }
-                }
-            }
-            '[' => {
-                self.chars.next();
-                loop {
-                    self.skip_whitespace();
-                    let next_c = self.chars.peek()?.1;
-                    if next_c == ']' {
-                        self.chars.next();
-                        break;
-                    }
-                    self.skip_value()?;
-                    self.skip_whitespace();
-                    let comma = self.chars.peek()?.1;
-                    if comma == ',' {
-                        self.chars.next();
-                    } else if comma == ']' {
-                        // will break next
-                    } else {
-                        return None;
-                    }
-                }
-            }
-            '"' => {
-                self.parse_string()?;
-            }
-            't' | 'f' | 'n' => {
-                while let Some(&(_, c)) = self.chars.peek() {
-                    if c.is_alphabetic() {
-                        self.chars.next();
-                    } else {
-                        break;
-                    }
-                }
-            }
-            '-' | '0'..='9' => {
-                while let Some(&(_, c)) = self.chars.peek() {
-                    if c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' || c.is_digit(10) {
-                        self.chars.next();
-                    } else {
-                        break;
-                    }
-                }
-            }
-            _ => return None,
-        }
-        Some(())
-    }
+    None
 }
 
 
@@ -498,9 +332,47 @@ struct DataEditorApp {
 }
 
 impl DataEditorApp {
+    fn json_to_kdl_string(&self, val: &serde_json::Value) -> String {
+        let mut out = String::new();
+        if let serde_json::Value::Object(map) = val {
+            for (sec_name, sec_val) in map {
+                out.push_str(&format!("{} {{\n", sec_name));
+                if let serde_json::Value::Object(sec_map) = sec_val {
+                    for (key, k_val) in sec_map {
+                        let (val_str, val_ty) = match k_val {
+                            serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
+                            serde_json::Value::Number(num) => {
+                                if num.is_f64() {
+                                    (num.to_string(), Some("f64"))
+                                } else {
+                                    (num.to_string(), Some("i64"))
+                                }
+                            }
+                            serde_json::Value::String(s) => {
+                                if s.starts_with('#') {
+                                    (format!("\"{}\"", s), Some("color"))
+                                } else {
+                                    (format!("\"{}\"", s), None)
+                                }
+                            }
+                            _ => (k_val.to_string(), None),
+                        };
+                        if let Some(ty) = val_ty {
+                            out.push_str(&format!("    {} ({}){}\n", key, ty, val_str));
+                        } else {
+                            out.push_str(&format!("    {} {}\n", key, val_str));
+                        }
+                    }
+                }
+                out.push_str("}\n");
+            }
+        }
+        out
+    }
+
     fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
         println!("[DEBUG] pick_file_to_open: Executing XDG desktop portal file chooser");
-        match cce_ui::file_dialog::pick_file("Open JSON Document", &[("JSON Documents", &["json"]), ("All Files", &["*"])]) {
+        match cce_ui::file_dialog::pick_file("Open KDL Document", &[("KDL Documents", &["kdl"]), ("All Files", &["*"])]) {
             Some(path) => Ok(path),
             None => Err("No file selected".to_string()),
         }
@@ -508,7 +380,7 @@ impl DataEditorApp {
 
     fn pick_file_to_save(&self) -> Result<std::path::PathBuf, String> {
         println!("[DEBUG] pick_file_to_save: Executing XDG desktop portal file chooser");
-        match cce_ui::file_dialog::save_file("Save JSON Document", &[("JSON Documents", &["json"]), ("All Files", &["*"])]) {
+        match cce_ui::file_dialog::save_file("Save KDL Document", &[("KDL Documents", &["kdl"]), ("All Files", &["*"])]) {
             Some(path) => Ok(path),
             None => Err("No file selected".to_string()),
         }
@@ -516,11 +388,10 @@ impl DataEditorApp {
 
     fn update_raw_from_flat(&mut self) {
         let root = unflatten_json(&self.flat_keys);
-        if let Ok(pretty) = serde_json::to_string_pretty(&root) {
-            self.raw_json_editor.text = pretty;
-            self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
-            self.raw_json_editor.sync_editor_state();
-        }
+        let pretty = self.json_to_kdl_string(&root);
+        self.raw_json_editor.text = pretty;
+        self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
+        self.raw_json_editor.sync_editor_state();
     }
 
     fn sync_preview_selection(&mut self) {
@@ -529,7 +400,7 @@ impl DataEditorApp {
                 let path = &self.flat_keys[idx].0;
                 let tokens = parse_path(path);
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-                if let Some((start, end)) = JsonSpanFinder::new(content).find(&tokens) {
+                if let Some((start, end)) = find_kdl_span(content, &tokens) {
                     self.raw_json_editor.select_anchor = Some(start);
                     self.raw_json_editor.cursor_idx = end;
                     self.raw_json_editor.sync_editor_state();
@@ -819,9 +690,8 @@ impl Application for DataEditorApp {
                     raw_json_editor.text = content;
                     raw_json_editor.edit_buffer = raw_json_editor.text.clone();
                     current_file_path = Some(path);
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw_json_editor.text) {
-                        flatten_json(&val, "", &mut flat_keys);
-                    }
+                    let val = cce_ui::config::parse_kdl_to_json(&raw_json_editor.text);
+                    flatten_json(&val, "", &mut flat_keys);
                 }
             }
         }
@@ -866,7 +736,7 @@ impl Application for DataEditorApp {
 
     fn settings(&self) -> WindowSettings {
         WindowSettings {
-            title: "Clear JSON Data Editor".to_string(),
+            title: "Clear KDL Data Editor".to_string(),
             app_id: "cce-data-editor".to_string(),
             width: 800,
             height: 600,
@@ -894,11 +764,14 @@ impl Application for DataEditorApp {
                                 self.raw_json_editor.editing = false;
                                 
                                 self.flat_keys.clear();
-                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.raw_json_editor.text) {
+                                if self.raw_json_editor.text.parse::<kdl::KdlDocument>().is_ok() {
+                                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
                                     flatten_json(&val, "", &mut self.flat_keys);
                                     self.status_message = Some((format!("Opened {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
                                 } else {
-                                    self.status_message = Some(("Loaded, but JSON is syntactically invalid".to_string(), true));
+                                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
+                                    flatten_json(&val, "", &mut self.flat_keys);
+                                    self.status_message = Some(("Loaded, but KDL is syntactically invalid".to_string(), true));
                                 }
                                 
                                 self.selected_key_idx = None;
@@ -925,8 +798,8 @@ impl Application for DataEditorApp {
             }
             AppMessage::SaveDocument => {
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-                if let Err(e) = serde_json::from_str::<serde_json::Value>(content) {
-                    self.status_message = Some((format!("Cannot save: invalid JSON ({})", e), true));
+                if let Err(e) = content.parse::<kdl::KdlDocument>() {
+                    self.status_message = Some((format!("Cannot save: invalid KDL ({})", e), true));
                     *needs_rebuild = true;
                     self.needs_rebuild = true;
                     return;
@@ -952,8 +825,8 @@ impl Application for DataEditorApp {
             }
             AppMessage::SaveDocumentAs => {
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-                if let Err(e) = serde_json::from_str::<serde_json::Value>(content) {
-                    self.status_message = Some((format!("Cannot save: invalid JSON ({})", e), true));
+                if let Err(e) = content.parse::<kdl::KdlDocument>() {
+                    self.status_message = Some((format!("Cannot save: invalid KDL ({})", e), true));
                     *needs_rebuild = true;
                     self.needs_rebuild = true;
                     return;
@@ -987,22 +860,22 @@ impl Application for DataEditorApp {
             }
             AppMessage::FormatJson => {
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-                match serde_json::from_str::<serde_json::Value>(content) {
-                    Ok(val) => {
-                        if let Ok(pretty) = serde_json::to_string_pretty(&val) {
-                            self.raw_json_editor.text = pretty;
-                            self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
-                            self.raw_json_editor.editing = false;
-                            self.raw_json_editor.sync_editor_state();
-                            
-                            self.flat_keys.clear();
-                            flatten_json(&val, "", &mut self.flat_keys);
-                            self.status_message = Some(("Formatted successfully".to_string(), false));
-                            self.sync_preview_selection();
-                        }
+                match content.parse::<kdl::KdlDocument>() {
+                    Ok(doc) => {
+                        let pretty = doc.to_string();
+                        self.raw_json_editor.text = pretty;
+                        self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
+                        self.raw_json_editor.editing = false;
+                        self.raw_json_editor.sync_editor_state();
+                        
+                        let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
+                        self.flat_keys.clear();
+                        flatten_json(&val, "", &mut self.flat_keys);
+                        self.status_message = Some(("Formatted successfully".to_string(), false));
+                        self.sync_preview_selection();
                     }
                     Err(e) => {
-                        self.status_message = Some((format!("JSON error: {}", e), true));
+                        self.status_message = Some((format!("KDL error: {}", e), true));
                     }
                 }
                 *needs_rebuild = true;
@@ -1019,11 +892,14 @@ impl Application for DataEditorApp {
                             self.raw_json_editor.editing = false;
                             
                             self.flat_keys.clear();
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.raw_json_editor.text) {
+                            if self.raw_json_editor.text.parse::<kdl::KdlDocument>().is_ok() {
+                                let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
                                 flatten_json(&val, "", &mut self.flat_keys);
                                 self.status_message = Some(("Refreshed from disk".to_string(), false));
                             } else {
-                                self.status_message = Some(("Refreshed, but JSON is syntactically invalid".to_string(), true));
+                                let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
+                                flatten_json(&val, "", &mut self.flat_keys);
+                                self.status_message = Some(("Refreshed, but KDL is syntactically invalid".to_string(), true));
                             }
                             
                             self.selected_key_idx = None;
@@ -1131,7 +1007,8 @@ impl Application for DataEditorApp {
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
         if self.raw_json_editor.take_change() {
             let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
+            if content.parse::<kdl::KdlDocument>().is_ok() {
+                let val = cce_ui::config::parse_kdl_to_json(content);
                 let mut new_flat = Vec::new();
                 flatten_json(&val, "", &mut new_flat);
                 
@@ -1156,7 +1033,7 @@ impl Application for DataEditorApp {
                 }
                 self.status_message = None;
             } else {
-                self.status_message = Some(("JSON syntax error in text editor".to_string(), true));
+                self.status_message = Some(("KDL syntax error in text editor".to_string(), true));
             }
             *needs_rebuild = true;
             self.needs_rebuild = true;
