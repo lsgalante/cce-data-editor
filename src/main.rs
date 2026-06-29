@@ -954,6 +954,11 @@ impl Application for DataEditorApp {
     }
 
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
+        if self.selected_color_editor.tick(_dt, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+
         if self.selected_value_editor.take_change() {
             let mut exit = false;
             self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
