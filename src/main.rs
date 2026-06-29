@@ -631,13 +631,46 @@ impl DataEditorApp {
                         bounds: list_bounds,
                     });
                     
+                    // Display Type Signature if any
+                    let val_ty = match val {
+                        serde_json::Value::Bool(_) => Some("bool"),
+                        serde_json::Value::Number(num) => {
+                            if num.is_f64() {
+                                Some("f64")
+                            } else {
+                                Some("i64")
+                            }
+                        }
+                        serde_json::Value::String(s) => {
+                            if s.starts_with('#') {
+                                Some("color")
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(ty) = val_ty {
+                        let ty_text = format!("({})", ty);
+                        let mut buf_ty = Buffer::new(&mut self.font_system, metrics.clone());
+                        buf_ty.set_text(&mut self.font_system, &ty_text, Attrs::new(), glyphon::Shaping::Advanced);
+                        buf_ty.shape_until_scroll(&mut self.font_system, true);
+                        self.text_items.push(TextItem {
+                            buffer: buf_ty,
+                            x: list_left + 190.0,
+                            y: row_y + 6.0,
+                            color: glyphon::Color::rgb(0xc6, 0x78, 0xdd), // Sleek purple
+                            bounds: list_bounds,
+                        });
+                    }
+                    
                     // Display Value
                     let mut buf_val = Buffer::new(&mut self.font_system, metrics);
                     buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
                     buf_val.shape_until_scroll(&mut self.font_system, true);
                     self.text_items.push(TextItem {
                         buffer: buf_val,
-                        x: list_left + 200.0,
+                        x: list_left + 245.0,
                         y: row_y + 6.0,
                         color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
                         bounds: list_bounds,
