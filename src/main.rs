@@ -339,28 +339,58 @@ impl DataEditorApp {
                 out.push_str(&format!("{} {{\n", sec_name));
                 if let serde_json::Value::Object(sec_map) = sec_val {
                     for (key, k_val) in sec_map {
-                        let (val_str, val_ty) = match k_val {
-                            serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
-                            serde_json::Value::Number(num) => {
-                                if num.is_f64() {
-                                    (num.to_string(), Some("f64"))
+                        if let serde_json::Value::Object(nested_map) = k_val {
+                            let mut prop_parts = Vec::new();
+                            for (prop_name, prop_val) in nested_map {
+                                let (val_str, val_ty) = match prop_val {
+                                    serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
+                                    serde_json::Value::Number(num) => {
+                                        if num.is_f64() {
+                                            (num.to_string(), Some("f64"))
+                                        } else {
+                                            (num.to_string(), Some("i64"))
+                                        }
+                                    }
+                                    serde_json::Value::String(s) => {
+                                        if s.starts_with('#') {
+                                            (format!("\"{}\"", s), Some("color"))
+                                        } else {
+                                            (format!("\"{}\"", s), None)
+                                        }
+                                    }
+                                    _ => (prop_val.to_string(), None),
+                                };
+                                if let Some(ty) = val_ty {
+                                    prop_parts.push(format!("{}=({}){}", prop_name, ty, val_str));
                                 } else {
-                                    (num.to_string(), Some("i64"))
+                                    prop_parts.push(format!("{}={}", prop_name, val_str));
                                 }
                             }
-                            serde_json::Value::String(s) => {
-                                if s.starts_with('#') {
-                                    (format!("\"{}\"", s), Some("color"))
-                                } else {
-                                    (format!("\"{}\"", s), None)
-                                }
-                            }
-                            _ => (k_val.to_string(), None),
-                        };
-                        if let Some(ty) = val_ty {
-                            out.push_str(&format!("    {} ({}){}\n", key, ty, val_str));
+                            out.push_str(&format!("    {} {}\n", key, prop_parts.join(" ")));
                         } else {
-                            out.push_str(&format!("    {} {}\n", key, val_str));
+                            let (val_str, val_ty) = match k_val {
+                                serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
+                                serde_json::Value::Number(num) => {
+                                    if num.is_f64() {
+                                        (num.to_string(), Some("f64"))
+                                    } else {
+                                        (num.to_string(), Some("i64"))
+                                    }
+                                }
+                                serde_json::Value::String(s) => {
+                                    if s.starts_with('#') {
+                                        (format!("\"{}\"", s), Some("color"))
+                                    } else {
+                                        (format!("\"{}\"", s), None)
+                                    }
+                                }
+                                _ => (k_val.to_string(), None),
+                            };
+                            if let Some(ty) = val_ty {
+                                out.push_str(&format!("    {} ({}){}\n", key, ty, val_str));
+                            } else {
+                                out.push_str(&format!("    {} {}\n", key, val_str));
+                            }
                         }
                     }
                 }
