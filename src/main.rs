@@ -3,7 +3,7 @@ use glyphon::{FontSystem, Buffer, Metrics, Attrs};
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
-    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement
+    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox
 };
 
 #[derive(Debug, Clone)]
@@ -227,6 +227,8 @@ struct DataEditorApp {
 
     // Edit Value input
     selected_value_editor: TextBox,
+    selected_color_editor: ColorSelector,
+    selected_spinbox_editor: Spinbox,
     btn_apply_val: Button,
     btn_delete_key: Button,
 
@@ -367,50 +369,31 @@ impl DataEditorApp {
         self.tree_list.set_flat_keys(self.flat_keys.clone());
     }
 
-    fn add_textbox_labels(
-        editor: &TextBox,
+    fn add_element_labels(
+        element: &dyn Element,
         ui_context: &cce_ui::context::UiContext,
         font_system: &mut FontSystem,
         text_items: &mut Vec<TextItem>,
         scale: f32,
-        bounds: Option<[f32; 4]>,
     ) {
-        let font_family = editor.font_family.clone();
-        for (label, tb_bounds) in editor.text_labels_with_bounds(ui_context) {
+        for (label, font_family, bounds) in element.text_labels_with_font_and_bounds(ui_context) {
             let physical_size = label.font_size * scale;
             let metrics = Metrics::new(physical_size, physical_size * 1.4);
             let mut buf = Buffer::new(font_system, metrics);
-            let family_val = match font_family.as_str() {
-                "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
-                "sans-serif" => glyphon::Family::SansSerif,
-                "serif" => glyphon::Family::Serif,
-                _ => glyphon::Family::Name(&font_family),
-            };
-            let attrs = Attrs::new().family(family_val);
+            let mut attrs = Attrs::new();
+            
+            // Keep family_str alive for the whole iteration so Family::Name(&family) borrow is valid
+            let family_str = font_family.clone();
+            if let Some(ref family) = family_str {
+                let family_val = match family.as_str() {
+                    "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
+                    "sans-serif" => glyphon::Family::SansSerif,
+                    "serif" => glyphon::Family::Serif,
+                    _ => glyphon::Family::Name(family),
+                };
+                attrs = attrs.family(family_val);
+            }
             buf.set_text(font_system, &label.text, attrs, glyphon::Shaping::Advanced);
-            buf.shape_until_scroll(font_system, true);
-            text_items.push(TextItem {
-                buffer: buf,
-                x: label.x,
-                y: label.y,
-                color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
-                bounds: bounds.or(tb_bounds),
-            });
-        }
-    }
-
-    fn add_treelist_labels(
-        tree_list: &TreeList,
-        ui_context: &cce_ui::context::UiContext,
-        font_system: &mut FontSystem,
-        text_items: &mut Vec<TextItem>,
-        scale: f32,
-    ) {
-        for (label, bounds) in tree_list.text_labels_with_bounds(ui_context) {
-            let physical_size = label.font_size * scale;
-            let metrics = Metrics::new(physical_size, physical_size * 1.4);
-            let mut buf = Buffer::new(font_system, metrics);
-            buf.set_text(font_system, &label.text, Attrs::new(), glyphon::Shaping::Advanced);
             buf.shape_until_scroll(font_system, true);
             text_items.push(TextItem {
                 buffer: buf,
@@ -478,7 +461,7 @@ impl DataEditorApp {
         };
         labels.push(TextLabel {
             text: format!("File: {}", file_name_str),
-            x: 420.0,
+            x: 550.0,
             y: 15.0,
             font_size: 12.0,
             color: [0xdd, 0xdd, 0xe2],
@@ -504,30 +487,41 @@ impl DataEditorApp {
             });
         }
 
-        // 5. Add Textbox contents to text_items
-        Self::add_textbox_labels(
+        // 5. Add Textbox / Element contents to text_items
+        Self::add_element_labels(
             &self.raw_json_editor,
             &self.ui_context,
             &mut self.font_system,
             &mut self.text_items,
             scale,
-            None,
         );
-        Self::add_textbox_labels(
+        Self::add_element_labels(
             &self.selected_value_editor,
             &self.ui_context,
             &mut self.font_system,
             &mut self.text_items,
             scale,
-            None,
         );
-        Self::add_textbox_labels(
+        Self::add_element_labels(
+            &self.selected_color_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
+            &self.selected_spinbox_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
             &self.new_key_editor,
             &self.ui_context,
             &mut self.font_system,
             &mut self.text_items,
             scale,
-            None,
         );
 
         // 6. Build static text items
@@ -547,7 +541,7 @@ impl DataEditorApp {
         }
 
         // 7. Left List rows text with clip bounds via TreeList
-        Self::add_treelist_labels(
+        Self::add_element_labels(
             &self.tree_list,
             &self.ui_context,
             &mut self.font_system,
@@ -578,6 +572,8 @@ impl Application for DataEditorApp {
 
         let mut selected_value_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
         selected_value_editor.set_placeholder("value (e.g. 42, true, \"hello\")");
+        let selected_color_editor = ColorSelector::new([255, 255, 255]);
+        let selected_spinbox_editor = Spinbox::new(0, -1000000, 1000000, 1);
         let btn_apply_val = Button::new(10.0, 490.0, 100.0, 26.0).with_label("Apply");
         let btn_delete_key = Button::new(120.0, 490.0, 100.0, 26.0).with_label("Delete");
 
@@ -625,6 +621,8 @@ impl Application for DataEditorApp {
             new_key_editor,
             btn_add_key,
             selected_value_editor,
+            selected_color_editor,
+            selected_spinbox_editor,
             btn_apply_val,
             btn_delete_key,
             raw_json_editor,
@@ -877,6 +875,16 @@ impl Application for DataEditorApp {
                             self.update_raw_from_flat();
                             self.status_message = Some(("Value applied".to_string(), false));
                             self.sync_preview_selection();
+
+                            // Sync controls:
+                            let val = &self.flat_keys[idx].1;
+                            if let serde_json::Value::String(s) = val {
+                                if let Some(c) = parse_hex_color(s) {
+                                    self.selected_color_editor.color = c;
+                                }
+                            } else if let Some(num) = val.as_i64() {
+                                self.selected_spinbox_editor.value = num as i32;
+                            }
                         }
                         Err(e) => {
                             if !val_trimmed.starts_with('"') && !val_trimmed.starts_with('[') && !val_trimmed.starts_with('{') {
@@ -888,6 +896,16 @@ impl Application for DataEditorApp {
                                 self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
                                 self.selected_value_editor.editing = false;
                                 
+                                // Sync controls:
+                                let val = &self.flat_keys[idx].1;
+                                if let serde_json::Value::String(s) = val {
+                                    if let Some(c) = parse_hex_color(s) {
+                                        self.selected_color_editor.color = c;
+                                    }
+                                } else if let Some(num) = val.as_i64() {
+                                    self.selected_spinbox_editor.value = num as i32;
+                                }
+
                                 self.status_message = Some(("Value applied as string".to_string(), false));
                                 self.sync_preview_selection();
                             } else {
@@ -922,6 +940,33 @@ impl Application for DataEditorApp {
             let mut exit = false;
             self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
         }
+        if self.selected_color_editor.take_change() {
+            if let Some(idx) = self.selected_key_idx {
+                let hex_str = format_hex_color(self.selected_color_editor.color);
+                let new_val = serde_json::Value::String(hex_str.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                self.selected_value_editor.editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if self.selected_spinbox_editor.take_change() {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::Number(self.selected_spinbox_editor.value.into());
+                self.flat_keys[idx].1 = new_val;
+                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                self.selected_value_editor.editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
         if self.raw_json_editor.take_change() {
             let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
             if content.parse::<kdl::KdlDocument>().is_ok() {
@@ -938,6 +983,16 @@ impl Application for DataEditorApp {
                         self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
                         if !self.selected_value_editor.editing {
                             self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                        }
+                        
+                        // Sync controls:
+                        let val = &self.flat_keys[idx].1;
+                        if let serde_json::Value::String(s) = val {
+                            if let Some(c) = parse_hex_color(s) {
+                                self.selected_color_editor.color = c;
+                            }
+                        } else if let Some(num) = val.as_i64() {
+                            self.selected_spinbox_editor.value = num as i32;
                         }
                     } else {
                         self.selected_value_editor.text.clear();
@@ -964,6 +1019,8 @@ impl Application for DataEditorApp {
             unsafe {
                 self.ui_context.register_widget(self.root_window.base().unwrap().id(), &mut (*self_ptr).root_window as *mut Backplate as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), &mut (*self_ptr).selected_spinbox_editor as *mut Spinbox as *mut (dyn Element + 'static));
                 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_save.as_ptr_mut(), &mut self.ui_context);
@@ -977,6 +1034,8 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.new_key_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_color_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
@@ -1017,23 +1076,44 @@ impl Application for DataEditorApp {
             let list_top = 52.0;
             let list_bottom = bottom_y_calc(self.height);
             let list_height = list_bottom - list_top;
-            self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
+            self.tree_list.set_rect(10.0, list_top, 520.0, list_height);
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
                 if let Some((row_x, row_y, _row_w, _row_h)) = self.tree_list.get_row_rect(selected_idx) {
-                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 120.0, 26.0);
+                    
+                    let val = &self.flat_keys[selected_idx].1;
+                    if let serde_json::Value::String(s) = val {
+                        if s.starts_with('#') {
+                            self.selected_color_editor.set_rect(row_x + 380.0, row_y + 1.0, 130.0, 26.0);
+                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        } else {
+                            self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        }
+                    } else if val.is_i64() {
+                        self.selected_spinbox_editor.set_rect(row_x + 380.0, row_y + 1.0, 130.0, 26.0);
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    } else {
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    }
                 } else {
                     self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
             // Right pane raw editor
-            let right_w = (self.width as f32 - 420.0).max(100.0);
+            let right_w = (self.width as f32 - 560.0).max(100.0);
             let right_h = (self.height as f32 - 92.0).max(100.0);
-            self.raw_json_editor.set_rect(410.0, 52.0, right_w, right_h);
+            self.raw_json_editor.set_rect(550.0, 52.0, right_w, right_h);
             
             self.rebuild_text_items();
             self.ui_context.rebuild_spatial_grid();
@@ -1079,6 +1159,8 @@ impl Application for DataEditorApp {
         
         if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
         if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1158,6 +1240,12 @@ impl Application for DataEditorApp {
         if self.selected_value_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
         }
+        if self.selected_color_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+        }
+        if self.selected_spinbox_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+        }
         if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
         }
@@ -1177,6 +1265,16 @@ impl Application for DataEditorApp {
                         self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
                         self.selected_value_editor.editing = false;
                         
+                        // Sync controls:
+                        let val = &self.flat_keys[original_idx].1;
+                        if let serde_json::Value::String(s) = val {
+                            if let Some(c) = parse_hex_color(s) {
+                                self.selected_color_editor.color = c;
+                            }
+                        } else if let Some(num) = val.as_i64() {
+                            self.selected_spinbox_editor.value = num as i32;
+                        }
+                        
                         self.ui_context.set_focused(&mut self.selected_value_editor);
                         TextBox::focus(&mut self.selected_value_editor);
                         self.sync_preview_selection();
@@ -1188,12 +1286,14 @@ impl Application for DataEditorApp {
             let bottom_y = bottom_y_calc(self.height);
             let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
             let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
-            let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            let in_raw = px >= 550.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
             
             if !in_new_key && !in_sel_val && !in_raw {
                 self.raw_json_editor.unfocus();
                 self.new_key_editor.unfocus();
                 self.selected_value_editor.unfocus();
+                self.selected_color_editor.unfocus();
+                self.selected_spinbox_editor.unfocus();
                 self.tree_list.unfocus();
                 changed = true;
             }
@@ -1211,6 +1311,14 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
         if self.tree_list.mouse_wheel(delta, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.selected_color_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.selected_spinbox_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -1277,6 +1385,8 @@ impl Application for DataEditorApp {
                     msg_out = Some(AppMessage::ApplyValue);
                 }
             }
+            if self.selected_color_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
+            if self.selected_spinbox_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.new_key_editor.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
                 if event.state == ElementState::Pressed && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter) {
@@ -1294,6 +1404,22 @@ impl Application for DataEditorApp {
     }
 }
 
+fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+    let s = s.trim_matches(|c| c == '"' || c == '\'' || c == ' ');
+    let s = s.trim_start_matches('#');
+    if s.len() == 6 {
+        let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+        Some([r, g, b])
+    } else {
+        None
+    }
+}
+
+fn format_hex_color(color: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+}
 
 fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
