@@ -52,6 +52,229 @@ fn parse_path(path: &str) -> Vec<PathToken> {
     tokens
 }
 
+struct JsonSpanFinder<'a> {
+    input: &'a str,
+    chars: std::iter::Peekable<std::str::CharIndices<'a>>,
+}
+
+impl<'a> JsonSpanFinder<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            input,
+            chars: input.char_indices().peekable(),
+        }
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(&(_, c)) = self.chars.peek() {
+            if c.is_whitespace() {
+                self.chars.next();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn find(&mut self, tokens: &[PathToken]) -> Option<(usize, usize)> {
+        self.skip_whitespace();
+        if tokens.is_empty() {
+            let start = self.chars.peek()?.0;
+            self.skip_value()?;
+            let end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
+            return Some((start, end));
+        }
+
+        let next_token = &tokens[0];
+        match next_token {
+            PathToken::Key(target_key) => {
+                if self.chars.peek()?.1 != '{' {
+                    return None;
+                }
+                self.chars.next(); // consume '{'
+                
+                loop {
+                    self.skip_whitespace();
+                    let next_c = self.chars.peek()?.1;
+                    if next_c == '}' {
+                        self.chars.next();
+                        break;
+                    }
+                    
+                    let _key_start = self.chars.peek()?.0;
+                    let key = self.parse_string()?;
+                    
+                    self.skip_whitespace();
+                    if self.chars.next()?.1 != ':' {
+                        return None;
+                    }
+                    self.skip_whitespace();
+                    
+                    if key == *target_key {
+                        if tokens.len() == 1 {
+                            let val_start = self.chars.peek()?.0;
+                            self.skip_value()?;
+                            let val_end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
+                            return Some((val_start, val_end));
+                        } else {
+                            return self.find(&tokens[1..]);
+                        }
+                    } else {
+                        self.skip_value()?;
+                    }
+                    
+                    self.skip_whitespace();
+                    let comma_c = self.chars.peek()?.1;
+                    if comma_c == ',' {
+                        self.chars.next();
+                    } else if comma_c == '}' {
+                        // next iteration will handle loop break
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            PathToken::Index(target_idx) => {
+                if self.chars.peek()?.1 != '[' {
+                    return None;
+                }
+                self.chars.next(); // consume '['
+                
+                let mut current_idx = 0;
+                loop {
+                    self.skip_whitespace();
+                    let next_c = self.chars.peek()?.1;
+                    if next_c == ']' {
+                        self.chars.next();
+                        break;
+                    }
+                    
+                    if current_idx == *target_idx {
+                        if tokens.len() == 1 {
+                            let val_start = self.chars.peek()?.0;
+                            self.skip_value()?;
+                            let val_end = self.chars.peek().map(|&(i, _)| i).unwrap_or(self.input.len());
+                            return Some((val_start, val_end));
+                        } else {
+                            return self.find(&tokens[1..]);
+                        }
+                    } else {
+                        self.skip_value()?;
+                    }
+                    
+                    self.skip_whitespace();
+                    let comma_c = self.chars.peek()?.1;
+                    if comma_c == ',' {
+                        self.chars.next();
+                        current_idx += 1;
+                    } else if comma_c == ']' {
+                        // next iteration will handle loop break
+                    } else {
+                        return None;
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn parse_string(&mut self) -> Option<String> {
+        self.skip_whitespace();
+        if self.chars.next()?.1 != '"' {
+            return None;
+        }
+        let mut s = String::new();
+        while let Some((_, c)) = self.chars.next() {
+            if c == '"' {
+                return Some(s);
+            } else if c == '\\' {
+                let escaped = self.chars.next()?.1;
+                s.push(escaped);
+            } else {
+                s.push(c);
+            }
+        }
+        None
+    }
+
+    fn skip_value(&mut self) -> Option<()> {
+        self.skip_whitespace();
+        let &(_, c) = self.chars.peek()?;
+        match c {
+            '{' => {
+                self.chars.next();
+                loop {
+                    self.skip_whitespace();
+                    let next_c = self.chars.peek()?.1;
+                    if next_c == '}' {
+                        self.chars.next();
+                        break;
+                    }
+                    self.parse_string()?;
+                    self.skip_whitespace();
+                    if self.chars.next()?.1 != ':' {
+                        return None;
+                    }
+                    self.skip_value()?;
+                    self.skip_whitespace();
+                    let comma = self.chars.peek()?.1;
+                    if comma == ',' {
+                        self.chars.next();
+                    } else if comma == '}' {
+                        // will break next
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            '[' => {
+                self.chars.next();
+                loop {
+                    self.skip_whitespace();
+                    let next_c = self.chars.peek()?.1;
+                    if next_c == ']' {
+                        self.chars.next();
+                        break;
+                    }
+                    self.skip_value()?;
+                    self.skip_whitespace();
+                    let comma = self.chars.peek()?.1;
+                    if comma == ',' {
+                        self.chars.next();
+                    } else if comma == ']' {
+                        // will break next
+                    } else {
+                        return None;
+                    }
+                }
+            }
+            '"' => {
+                self.parse_string()?;
+            }
+            't' | 'f' | 'n' => {
+                while let Some(&(_, c)) = self.chars.peek() {
+                    if c.is_alphabetic() {
+                        self.chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            '-' | '0'..='9' => {
+                while let Some(&(_, c)) = self.chars.peek() {
+                    if c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' || c.is_digit(10) {
+                        self.chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => return None,
+        }
+        Some(())
+    }
+}
+
+
 fn insert_value(target: &mut serde_json::Value, tokens: &[PathToken], value: serde_json::Value) {
     if tokens.is_empty() {
         *target = value;
@@ -216,6 +439,24 @@ impl DataEditorApp {
             self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
             self.raw_json_editor.sync_editor_state();
         }
+    }
+
+    fn sync_preview_selection(&mut self) {
+        if let Some(idx) = self.selected_key_idx {
+            if idx < self.flat_keys.len() {
+                let path = &self.flat_keys[idx].0;
+                let tokens = parse_path(path);
+                let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
+                if let Some((start, end)) = JsonSpanFinder::new(content).find(&tokens) {
+                    self.raw_json_editor.select_anchor = Some(start);
+                    self.raw_json_editor.cursor_idx = end;
+                    self.raw_json_editor.sync_editor_state();
+                    return;
+                }
+            }
+        }
+        self.raw_json_editor.select_anchor = None;
+        self.raw_json_editor.sync_editor_state();
     }
 
     fn add_textbox_labels(
@@ -557,6 +798,7 @@ impl Application for DataEditorApp {
                                 self.selected_key_idx = None;
                                 self.scroll_y = 0.0;
                                 self.current_file_path = Some(path);
+                                self.sync_preview_selection();
                             }
                             Err(e) => {
                                 self.status_message = Some((format!("Error opening: {}", e), true));
@@ -650,6 +892,7 @@ impl Application for DataEditorApp {
                             self.flat_keys.clear();
                             flatten_json(&val, "", &mut self.flat_keys);
                             self.status_message = Some(("Formatted successfully".to_string(), false));
+                            self.sync_preview_selection();
                         }
                     }
                     Err(e) => {
@@ -688,6 +931,7 @@ impl Application for DataEditorApp {
                     self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
                     self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
                     self.selected_value_editor.editing = false;
+                    self.sync_preview_selection();
                 }
                 
                 self.status_message = Some((format!("Added key: {}", trimmed), false));
@@ -703,6 +947,7 @@ impl Application for DataEditorApp {
                             self.flat_keys[idx].1 = parsed;
                             self.update_raw_from_flat();
                             self.status_message = Some(("Value applied".to_string(), false));
+                            self.sync_preview_selection();
                         }
                         Err(e) => {
                             if !val_trimmed.starts_with('"') && !val_trimmed.starts_with('[') && !val_trimmed.starts_with('{') {
@@ -715,6 +960,7 @@ impl Application for DataEditorApp {
                                 self.selected_value_editor.editing = false;
                                 
                                 self.status_message = Some(("Value applied as string".to_string(), false));
+                                self.sync_preview_selection();
                             } else {
                                 self.status_message = Some((format!("Parse Error: must be valid JSON value ({})", e), true));
                             }
@@ -733,6 +979,7 @@ impl Application for DataEditorApp {
                     self.selected_value_editor.edit_buffer.clear();
                     self.selected_value_editor.editing = false;
                     self.update_raw_from_flat();
+                    self.sync_preview_selection();
                     self.status_message = Some((format!("Deleted key: {}", name), false));
                 }
                 *needs_rebuild = true;
@@ -763,6 +1010,9 @@ impl Application for DataEditorApp {
                         self.selected_value_editor.edit_buffer.clear();
                         self.selected_value_editor.editing = false;
                     }
+                }
+                if !self.raw_json_editor.editing {
+                    self.sync_preview_selection();
                 }
                 self.status_message = None;
             } else {
@@ -1037,6 +1287,7 @@ impl Application for DataEditorApp {
                     
                     self.ui_context.set_focused(&mut self.selected_value_editor);
                     TextBox::focus(&mut self.selected_value_editor);
+                    self.sync_preview_selection();
                     changed = true;
                 }
             } else {
