@@ -193,6 +193,7 @@ struct DataEditorApp {
 
 impl DataEditorApp {
     fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
+        println!("[DEBUG] pick_file_to_open: Executing cce-files --select");
         let res = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
             .arg("--select")
             .output()
@@ -586,8 +587,10 @@ impl Application for DataEditorApp {
                 *exit = true;
             }
             AppMessage::OpenDocument => {
+                println!("[DEBUG] update: AppMessage::OpenDocument received");
                 match self.pick_file_to_open() {
                     Ok(path) => {
+                        println!("[DEBUG] pick_file_to_open succeeded, path = {:?}", path);
                         match std::fs::read_to_string(&path) {
                             Ok(content) => {
                                 self.raw_json_editor.text = content;
@@ -616,6 +619,7 @@ impl Application for DataEditorApp {
                         self.needs_rebuild = true;
                     }
                     Err(e) => {
+                        println!("[DEBUG] pick_file_to_open failed, error = {:?}", e);
                         if e != "No file selected" {
                             self.status_message = Some((format!("File picker error: {}", e), true));
                             *needs_rebuild = true;
@@ -983,6 +987,7 @@ impl Application for DataEditorApp {
     }
 
     fn handle_mouse_input(&mut self, button: MouseButton, state: ElementState, pos: LogicalPosition, needs_rebuild: &mut bool) -> Option<Self::Message> {
+        println!("[DEBUG] handle_mouse_input: button={:?}, state={:?}, pos=({:.1}, {:.1})", button, state, pos.x, pos.y);
         let mut changed = false;
         let mut msg_out = None;
         let px = pos.x as f32;
@@ -991,6 +996,7 @@ impl Application for DataEditorApp {
         if self.btn_open.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             if state == ElementState::Released && self.btn_open.take_click() {
+                println!("[DEBUG] btn_open click registered! Dispatching OpenDocument");
                 msg_out = Some(AppMessage::OpenDocument);
             }
         }
