@@ -194,73 +194,18 @@ struct DataEditorApp {
 
 impl DataEditorApp {
     fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
-        println!("[DEBUG] pick_file_to_open: Executing cce-files --select");
-        let res = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
-            .arg("--select")
-            .output()
-            .or_else(|_| {
-                std::process::Command::new("cce-files")
-                    .arg("--select")
-                    .output()
-            });
-        
-        match res {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let trimmed = stdout.trim().to_string();
-                    if !trimmed.is_empty() {
-                        Ok(std::path::PathBuf::from(trimmed))
-                    } else {
-                        Err("No file selected".to_string())
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    if stderr.is_empty() {
-                        Err(format!("cce-files exited with code {}", output.status.code().unwrap_or(-1)))
-                    } else {
-                        Err(stderr)
-                    }
-                }
-            }
-            Err(e) => {
-                Err(format!("Failed to execute cce-files: {}", e))
-            }
+        println!("[DEBUG] pick_file_to_open: Executing XDG desktop portal file chooser");
+        match cce_ui::file_dialog::pick_file("Open JSON Document", &[("JSON Documents", &["json"]), ("All Files", &["*"])]) {
+            Some(path) => Ok(path),
+            None => Err("No file selected".to_string()),
         }
     }
 
     fn pick_file_to_save(&self) -> Result<std::path::PathBuf, String> {
-        let res = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
-            .arg("--save")
-            .output()
-            .or_else(|_| {
-                std::process::Command::new("cce-files")
-                    .arg("--save")
-                    .output()
-            });
-        
-        match res {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    let trimmed = stdout.trim().to_string();
-                    if !trimmed.is_empty() {
-                        Ok(std::path::PathBuf::from(trimmed))
-                    } else {
-                        Err("No file selected".to_string())
-                    }
-                } else {
-                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                    if stderr.is_empty() {
-                        Err(format!("cce-files exited with code {}", output.status.code().unwrap_or(-1)))
-                    } else {
-                        Err(stderr)
-                    }
-                }
-            }
-            Err(e) => {
-                Err(format!("Failed to execute cce-files: {}", e))
-            }
+        println!("[DEBUG] pick_file_to_save: Executing XDG desktop portal file chooser");
+        match cce_ui::file_dialog::save_file("Save JSON Document", &[("JSON Documents", &["json"]), ("All Files", &["*"])]) {
+            Some(path) => Ok(path),
+            None => Err("No file selected".to_string()),
         }
     }
 
