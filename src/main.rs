@@ -3,7 +3,7 @@ use glyphon::{FontSystem, Buffer, Metrics, Attrs};
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
-    TextBox, Button, TextLabel, Key
+    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement
 };
 
 #[derive(Debug, Clone)]
@@ -207,84 +207,6 @@ fn bottom_y_calc(height: u32) -> f32 {
     height as f32 - 180.0
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum TreeElement {
-    Section {
-        path: String,
-        name: String,
-        indent: usize,
-        collapsed: bool,
-    },
-    Leaf {
-        path: String,
-        name: String,
-        indent: usize,
-        val: serde_json::Value,
-        original_idx: usize,
-    }
-}
-
-fn build_tree(flat_keys: &[(String, serde_json::Value)], collapsed_sections: &std::collections::HashSet<String>) -> Vec<TreeElement> {
-    let mut items = Vec::new();
-    let mut seen_prefixes = std::collections::HashSet::new();
-
-    for (original_idx, (key_path, val)) in flat_keys.iter().enumerate() {
-        let tokens = parse_path(key_path);
-        let mut current_prefix = String::new();
-        let mut is_hidden = false;
-        
-        for i in 0..tokens.len() {
-            let token = &tokens[i];
-            let part_name = match token {
-                PathToken::Key(k) => {
-                    if current_prefix.is_empty() {
-                        current_prefix = k.clone();
-                    } else {
-                        current_prefix = format!("{}.{}", current_prefix, k);
-                    }
-                    k.clone()
-                }
-                PathToken::Index(idx) => {
-                    let s = format!("[{}]", idx);
-                    current_prefix = format!("{}{}", current_prefix, s);
-                    s
-                }
-            };
-
-            let is_last = i == tokens.len() - 1;
-            
-            if is_hidden {
-                continue;
-            }
-
-            if is_last {
-                items.push(TreeElement::Leaf {
-                    path: key_path.clone(),
-                    name: part_name,
-                    indent: i,
-                    val: val.clone(),
-                    original_idx,
-                });
-            } else {
-                if !seen_prefixes.contains(&current_prefix) {
-                    seen_prefixes.insert(current_prefix.clone());
-                    let collapsed = collapsed_sections.contains(&current_prefix);
-                    items.push(TreeElement::Section {
-                        path: current_prefix.clone(),
-                        name: part_name,
-                        indent: i,
-                        collapsed,
-                    });
-                }
-                if collapsed_sections.contains(&current_prefix) {
-                    is_hidden = true;
-                }
-            }
-        }
-    }
-    items
-}
-
 struct DataEditorApp {
     // Toolbar Buttons
     btn_open: Button,
@@ -297,8 +219,7 @@ struct DataEditorApp {
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
     selected_key_idx: Option<usize>,
-    scroll_y: f32,
-    hovered_row_idx: Option<usize>,
+    tree_list: TreeList,
 
     // New Key input
     new_key_editor: TextBox,
@@ -317,6 +238,7 @@ struct DataEditorApp {
     status_message: Option<(String, bool)>,
 
     // UI state
+    root_window: Backplate,
     width: u32,
     height: u32,
     scale_factor: f64,
@@ -327,8 +249,6 @@ struct DataEditorApp {
     ctrl_pressed: bool,
     initial_focus: bool,
     widgets_registered: bool,
-    tree_items: Vec<TreeElement>,
-    collapsed_sections: std::collections::HashSet<String>,
 }
 
 impl DataEditorApp {
@@ -443,7 +363,8 @@ impl DataEditorApp {
     }
 
     fn rebuild_tree(&mut self) {
-        self.tree_items = build_tree(&self.flat_keys, &self.collapsed_sections);
+        self.tree_list.selected_key_idx = self.selected_key_idx;
+        self.tree_list.set_flat_keys(self.flat_keys.clone());
     }
 
     fn add_textbox_labels(
@@ -478,7 +399,31 @@ impl DataEditorApp {
         }
     }
 
+    fn add_treelist_labels(
+        tree_list: &TreeList,
+        ui_context: &cce_ui::context::UiContext,
+        font_system: &mut FontSystem,
+        text_items: &mut Vec<TextItem>,
+        scale: f32,
+    ) {
+        for (label, bounds) in tree_list.text_labels_with_bounds(ui_context) {
+            let physical_size = label.font_size * scale;
+            let metrics = Metrics::new(physical_size, physical_size * 1.4);
+            let mut buf = Buffer::new(font_system, metrics);
+            buf.set_text(font_system, &label.text, Attrs::new(), glyphon::Shaping::Advanced);
+            buf.shape_until_scroll(font_system, true);
+            text_items.push(TextItem {
+                buffer: buf,
+                x: label.x,
+                y: label.y,
+                color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
+                bounds,
+            });
+        }
+    }
+
     fn rebuild_text_items(&mut self) {
+        self.rebuild_tree();
         self.raw_json_editor.prepare_text(&mut self.font_system);
         self.selected_value_editor.prepare_text(&mut self.font_system);
         self.new_key_editor.prepare_text(&mut self.font_system);
@@ -601,115 +546,14 @@ impl DataEditorApp {
             });
         }
 
-        // 7. Left List rows text with clip bounds
-        let list_left = 10.0;
-        let list_right = 376.0;
-        let list_top = 52.0;
-        let list_bottom = bottom_y_calc(self.height);
-        let list_bounds = Some([list_left, list_top, list_right, list_bottom]);
-
-        self.rebuild_tree();
-
-        for (i, item) in self.tree_items.iter().enumerate() {
-            let row_y = list_top + i as f32 * 28.0 - self.scroll_y;
-            if row_y + 28.0 < list_top || row_y > list_bottom {
-                continue;
-            }
-            
-            let physical_size = 12.0 * scale;
-            let metrics = Metrics::new(physical_size, physical_size * 1.4);
-            
-            match item {
-                TreeElement::Section { path: _, name, indent, collapsed } => {
-                    let display_text = format!("{} {}", if *collapsed { "▶" } else { "▼" }, name);
-                    let color = [0x61, 0xaf, 0xef]; // Sleek blue for section headers
-                    
-                    let mut buf_key = Buffer::new(&mut self.font_system, metrics);
-                    buf_key.set_text(&mut self.font_system, &display_text, Attrs::new(), glyphon::Shaping::Advanced);
-                    buf_key.shape_until_scroll(&mut self.font_system, true);
-                    self.text_items.push(TextItem {
-                        buffer: buf_key,
-                        x: list_left + 8.0 + *indent as f32 * 12.0,
-                        y: row_y + 6.0,
-                        color: glyphon::Color::rgb(color[0], color[1], color[2]),
-                        bounds: list_bounds,
-                    });
-                }
-                TreeElement::Leaf { path: _, name, indent, val, original_idx } => {
-                    let val_str = serde_json::to_string(val).unwrap_or_default();
-                    let display_val = if val_str.len() > 18 {
-                        format!("{}...", &val_str[..15])
-                    } else {
-                        val_str
-                    };
-                    
-                    let color = if Some(*original_idx) == self.selected_key_idx {
-                        [0x7d, 0xff, 0xff]
-                    } else {
-                        [0xcc, 0xcc, 0xd4]
-                    };
-                    
-                    // Display Key Name
-                    let mut buf_key = Buffer::new(&mut self.font_system, metrics.clone());
-                    buf_key.set_text(&mut self.font_system, name, Attrs::new(), glyphon::Shaping::Advanced);
-                    buf_key.shape_until_scroll(&mut self.font_system, true);
-                    self.text_items.push(TextItem {
-                        buffer: buf_key,
-                        x: list_left + 8.0 + *indent as f32 * 12.0,
-                        y: row_y + 6.0,
-                        color: glyphon::Color::rgb(color[0], color[1], color[2]),
-                        bounds: list_bounds,
-                    });
-                    
-                    // Display Type Signature if any
-                    let val_ty = match val {
-                        serde_json::Value::Bool(_) => Some("bool"),
-                        serde_json::Value::Number(num) => {
-                            if num.is_f64() {
-                                Some("f64")
-                            } else {
-                                Some("i64")
-                            }
-                        }
-                        serde_json::Value::String(s) => {
-                            if s.starts_with('#') {
-                                Some("color")
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
-                    };
-                    if let Some(ty) = val_ty {
-                        let ty_text = format!("({})", ty);
-                        let mut buf_ty = Buffer::new(&mut self.font_system, metrics.clone());
-                        buf_ty.set_text(&mut self.font_system, &ty_text, Attrs::new(), glyphon::Shaping::Advanced);
-                        buf_ty.shape_until_scroll(&mut self.font_system, true);
-                        self.text_items.push(TextItem {
-                            buffer: buf_ty,
-                            x: list_left + 190.0,
-                            y: row_y + 6.0,
-                            color: glyphon::Color::rgb(0xc6, 0x78, 0xdd), // Sleek purple
-                            bounds: list_bounds,
-                        });
-                    }
-                    
-                    // Display Value (only if not currently being edited inline)
-                    if Some(*original_idx) != self.selected_key_idx {
-                        let mut buf_val = Buffer::new(&mut self.font_system, metrics);
-                        buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
-                        buf_val.shape_until_scroll(&mut self.font_system, true);
-                        self.text_items.push(TextItem {
-                            buffer: buf_val,
-                            x: list_left + 245.0,
-                            y: row_y + 6.0,
-                            color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
-                            bounds: list_bounds,
-                        });
-                    }
-                }
-            }
-        }
+        // 7. Left List rows text with clip bounds via TreeList
+        Self::add_treelist_labels(
+            &self.tree_list,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
     }
 }
 
@@ -761,7 +605,14 @@ impl Application for DataEditorApp {
             }
         }
 
+        let mut tree_list = TreeList::new();
+        tree_list.set_flat_keys(flat_keys.clone());
+
+        let root_window = Backplate::new(0.0, 0.0, 800.0, 600.0)
+            .with_movable(true);
+
         Self {
+            root_window,
             btn_open,
             btn_save,
             btn_save_as,
@@ -770,8 +621,7 @@ impl Application for DataEditorApp {
             btn_exit,
             flat_keys,
             selected_key_idx: None,
-            scroll_y: 0.0,
-            hovered_row_idx: None,
+            tree_list,
             new_key_editor,
             btn_add_key,
             selected_value_editor,
@@ -794,8 +644,6 @@ impl Application for DataEditorApp {
             ctrl_pressed: false,
             initial_focus: true,
             widgets_registered: false,
-            tree_items: Vec::new(),
-            collapsed_sections: std::collections::HashSet::new(),
         }
     }
 
@@ -840,7 +688,7 @@ impl Application for DataEditorApp {
                                 }
                                 
                                 self.selected_key_idx = None;
-                                self.scroll_y = 0.0;
+                                self.tree_list.scroll_box.scroll_y = 0.0;
                                 self.current_file_path = Some(path);
                                 self.sync_preview_selection();
                             }
@@ -1114,18 +962,22 @@ impl Application for DataEditorApp {
             self.widgets_registered = true;
             let self_ptr = self as *mut Self;
             unsafe {
-                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), &mut (*self_ptr).btn_open as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_save.base().unwrap().id(), &mut (*self_ptr).btn_save as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_save_as.base().unwrap().id(), &mut (*self_ptr).btn_save_as as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_format.base().unwrap().id(), &mut (*self_ptr).btn_format as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_refresh.base().unwrap().id(), &mut (*self_ptr).btn_refresh as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_exit.base().unwrap().id(), &mut (*self_ptr).btn_exit as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_add_key.base().unwrap().id(), &mut (*self_ptr).btn_add_key as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_apply_val.base().unwrap().id(), &mut (*self_ptr).btn_apply_val as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_delete_key.base().unwrap().id(), &mut (*self_ptr).btn_delete_key as *mut Button as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.new_key_editor.base().unwrap().id(), &mut (*self_ptr).new_key_editor as *mut TextBox as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.selected_value_editor.base().unwrap().id(), &mut (*self_ptr).selected_value_editor as *mut TextBox as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.raw_json_editor.base().unwrap().id(), &mut (*self_ptr).raw_json_editor as *mut TextBox as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.root_window.base().unwrap().id(), &mut (*self_ptr).root_window as *mut Backplate as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
+                
+                self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_save.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_save_as.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_format.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_refresh.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_exit.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_add_key.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_apply_val.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.btn_delete_key.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.new_key_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
         }
@@ -1143,6 +995,8 @@ impl Application for DataEditorApp {
             self.height = size.height as u32;
             self.scale_factor = scale;
             
+            self.root_window.set_rect(0.0, 0.0, self.width as f32, self.height as f32);
+            
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
             self.btn_save.set_rect(90.0, 8.0, 70.0, 26.0);
@@ -1159,22 +1013,16 @@ impl Application for DataEditorApp {
             self.btn_apply_val.set_rect(10.0, bottom_y + 70.0, 100.0, 26.0);
             self.btn_delete_key.set_rect(120.0, bottom_y + 70.0, 100.0, 26.0);
 
-            // Position the selected value editor inline inside the list if visible
+            // Position tree_list
             let list_top = 52.0;
             let list_bottom = bottom_y_calc(self.height);
+            let list_height = list_bottom - list_top;
+            self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
+
+            // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
-                if let Some(row_idx) = self.tree_items.iter().position(|item| {
-                    match item {
-                        TreeElement::Leaf { original_idx, .. } => *original_idx == selected_idx,
-                        _ => false,
-                    }
-                }) {
-                    let row_y = list_top + row_idx as f32 * 28.0 - self.scroll_y;
-                    if row_y >= list_top && row_y + 26.0 <= list_bottom {
-                        self.selected_value_editor.set_rect(255.0, row_y + 1.0, 125.0, 26.0);
-                    } else {
-                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                    }
+                if let Some((row_x, row_y, _row_w, _row_h)) = self.tree_list.get_row_rect(selected_idx) {
+                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                 } else {
                     self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
@@ -1204,81 +1052,10 @@ impl Application for DataEditorApp {
         quads.push((0.0, status_y, self.width as f32, 30.0, [0.08, 0.08, 0.10, 1.0]));
         quads.push((0.0, status_y, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
         
-        // 4. Left Panel List Box background and borders
-        let list_top = 52.0;
-        let list_bottom = bottom_y_calc(self.height);
-        let list_height = list_bottom - list_top;
-        quads.push((10.0, list_top, 380.0, list_height, [0.08, 0.08, 0.10, 1.0]));
-        quads.push((10.0, list_top, 380.0, 1.0, [0.18, 0.18, 0.22, 1.0]));
-        quads.push((10.0, list_bottom, 380.0, 1.0, [0.18, 0.18, 0.22, 1.0]));
-        quads.push((10.0, list_top, 1.0, list_height, [0.18, 0.18, 0.22, 1.0]));
-        quads.push((390.0, list_top, 1.0, list_height, [0.18, 0.18, 0.22, 1.0]));
 
-        // Draw left list rows
-        for i in 0..self.tree_items.len() {
-            let row_y = list_top + i as f32 * 28.0 - self.scroll_y;
-            if row_y + 28.0 < list_top || row_y > list_bottom {
-                continue;
-            }
-            
-            let draw_y = row_y.max(list_top);
-            let draw_bottom = (row_y + 28.0).min(list_bottom);
-            let draw_h = draw_bottom - draw_y;
-            if draw_h <= 0.0 { continue; }
-            
-            let bg_color = match &self.tree_items[i] {
-                TreeElement::Section { .. } => {
-                    if Some(i) == self.hovered_row_idx {
-                        [0.10, 0.12, 0.18, 1.0]
-                    } else {
-                        [0.07, 0.07, 0.09, 1.0]
-                    }
-                }
-                TreeElement::Leaf { original_idx, .. } => {
-                    if Some(*original_idx) == self.selected_key_idx {
-                        [0.15, 0.20, 0.30, 1.0]
-                    } else if Some(i) == self.hovered_row_idx {
-                        [0.12, 0.12, 0.16, 1.0]
-                    } else if i % 2 == 0 {
-                        [0.09, 0.09, 0.11, 1.0]
-                    } else {
-                        [0.08, 0.08, 0.10, 1.0]
-                    }
-                }
-            };
-            
-            quads.push((11.0, draw_y, 378.0, draw_h, bg_color));
-            
-            if row_y + 28.0 <= list_bottom {
-                quads.push((11.0, row_y + 27.0, 378.0, 1.0, [0.13, 0.13, 0.17, 1.0]));
-            }
-        }
 
-        // Draw left list scrollbar
-        let total_content_height = self.tree_items.len() as f32 * 28.0;
-        let max_scroll_y = (total_content_height - list_height).max(0.0);
-        if max_scroll_y > 0.0 {
-            let track_h = list_height - 8.0;
-            let thumb_h = (track_h * (list_height / total_content_height)).max(20.0);
-            let thumb_y = list_top + 4.0 + (track_h - thumb_h) * (self.scroll_y / max_scroll_y);
-            quads.push((384.0, list_top + 4.0, 4.0, track_h, [0.12, 0.12, 0.15, 1.0]));
-            quads.push((384.0, thumb_y, 4.0, thumb_h, [0.25, 0.25, 0.30, 1.0]));
-        }
-
-        // 5. Button and editor extra quads
-        quads.extend(self.btn_open.extra_quads());
-        quads.extend(self.btn_save.extra_quads());
-        quads.extend(self.btn_save_as.extra_quads());
-        quads.extend(self.btn_format.extra_quads());
-        quads.extend(self.btn_refresh.extra_quads());
-        quads.extend(self.btn_exit.extra_quads());
-        quads.extend(self.btn_add_key.extra_quads());
-        quads.extend(self.btn_apply_val.extra_quads());
-        quads.extend(self.btn_delete_key.extra_quads());
-        
-        quads.extend(self.new_key_editor.extra_quads());
-        quads.extend(self.selected_value_editor.extra_quads());
-        quads.extend(self.raw_json_editor.extra_quads());
+        // 5. Collect all quads recursively from Backplate
+        quads.extend(self.root_window.all_quads(&self.ui_context));
     }
 
     fn text_items(&self) -> &[TextItem] {
@@ -1304,21 +1081,7 @@ impl Application for DataEditorApp {
         if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
-        // Hover detection inside list box
-        let list_top = 52.0;
-        let list_bottom = bottom_y_calc(self.height);
-        if px >= 10.0 && px <= 380.0 && py >= list_top && py <= list_bottom {
-            let relative_y = py - list_top + self.scroll_y;
-            let row_idx = (relative_y / 28.0) as usize;
-            let new_hover = if row_idx < self.tree_items.len() { Some(row_idx) } else { None };
-            if self.hovered_row_idx != new_hover {
-                self.hovered_row_idx = new_hover;
-                changed = true;
-            }
-        } else if self.hovered_row_idx.is_some() {
-            self.hovered_row_idx = None;
-            changed = true;
-        }
+        if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
         if changed {
             *needs_rebuild = true;
@@ -1399,51 +1162,40 @@ impl Application for DataEditorApp {
             changed = true;
         }
 
-        // Selection clicking inside list box
-        let list_top = 52.0;
-        let list_bottom = list_bottom_calc(self.height);
-        if button == MouseButton::Left && state == ElementState::Pressed {
-            if px >= 10.0 && px <= 380.0 && py >= list_top && py <= list_bottom {
-                let relative_y = py - list_top + self.scroll_y;
-                let row_idx = (relative_y / 28.0) as usize;
-                if row_idx < self.tree_items.len() {
-                    match &self.tree_items[row_idx] {
-                        TreeElement::Section { path, .. } => {
-                            if self.collapsed_sections.contains(path) {
-                                self.collapsed_sections.remove(path);
-                            } else {
-                                self.collapsed_sections.insert(path.clone());
-                            }
-                            self.rebuild_tree();
-                            changed = true;
-                        }
-                        TreeElement::Leaf { original_idx, .. } => {
-                            self.selected_key_idx = Some(*original_idx);
-                            
-                            let value_str = serde_json::to_string(&self.flat_keys[*original_idx].1).unwrap_or_default();
-                            self.selected_value_editor.text = value_str;
-                            self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
-                            self.selected_value_editor.editing = false;
-                            
-                            self.ui_context.set_focused(&mut self.selected_value_editor);
-                            TextBox::focus(&mut self.selected_value_editor);
-                            self.sync_preview_selection();
-                            changed = true;
-                        }
+        if self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            if let Some(clicked_item) = self.tree_list.take_clicked_item() {
+                match clicked_item {
+                    TreeElement::Section { .. } => {
+                        changed = true;
+                    }
+                    TreeElement::Leaf { original_idx, .. } => {
+                        self.selected_key_idx = Some(original_idx);
+                        
+                        let value_str = serde_json::to_string(&self.flat_keys[original_idx].1).unwrap_or_default();
+                        self.selected_value_editor.text = value_str;
+                        self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                        self.selected_value_editor.editing = false;
+                        
+                        self.ui_context.set_focused(&mut self.selected_value_editor);
+                        TextBox::focus(&mut self.selected_value_editor);
+                        self.sync_preview_selection();
+                        changed = true;
                     }
                 }
-            } else {
-                let bottom_y = bottom_y_calc(self.height);
-                let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
-                let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
-                let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
-                
-                if !in_new_key && !in_sel_val && !in_raw {
-                    self.raw_json_editor.unfocus();
-                    self.new_key_editor.unfocus();
-                    self.selected_value_editor.unfocus();
-                    changed = true;
-                }
+            }
+        } else if button == MouseButton::Left && state == ElementState::Pressed {
+            let bottom_y = bottom_y_calc(self.height);
+            let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
+            let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
+            let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            
+            if !in_new_key && !in_sel_val && !in_raw {
+                self.raw_json_editor.unfocus();
+                self.new_key_editor.unfocus();
+                self.selected_value_editor.unfocus();
+                self.tree_list.unfocus();
+                changed = true;
             }
         }
 
@@ -1458,23 +1210,9 @@ impl Application for DataEditorApp {
     fn handle_mouse_wheel(&mut self, delta: &MouseScrollDelta, pos: LogicalPosition, needs_rebuild: &mut bool) {
         let px = pos.x as f32;
         let py = pos.y as f32;
-        let list_top = 52.0;
-        let list_bottom = bottom_y_calc(self.height);
-        let list_height = list_bottom - list_top;
-        
-        if px >= 10.0 && px <= 380.0 && py >= list_top && py <= list_bottom {
-            let scroll_amount = match delta {
-                MouseScrollDelta::LineDelta(_, y) => -y * 24.0,
-                MouseScrollDelta::PixelDelta(p) => -p.y as f32,
-            };
-            let total_content_height = self.tree_items.len() as f32 * 28.0;
-            let max_scroll_y = (total_content_height - list_height).max(0.0);
-            let old_scroll = self.scroll_y;
-            self.scroll_y = (self.scroll_y + scroll_amount).clamp(0.0, max_scroll_y);
-            if (self.scroll_y - old_scroll).abs() > 0.01 {
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
+        if self.tree_list.mouse_wheel(delta, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
         }
     }
 
@@ -1556,9 +1294,6 @@ impl Application for DataEditorApp {
     }
 }
 
-fn list_bottom_calc(height: u32) -> f32 {
-    bottom_y_calc(height)
-}
 
 fn main() {
     let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
