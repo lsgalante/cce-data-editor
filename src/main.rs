@@ -192,46 +192,74 @@ struct DataEditorApp {
 }
 
 impl DataEditorApp {
-    fn pick_file_to_open(&self) -> Option<std::path::PathBuf> {
-        let output = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
+    fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
+        let res = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
             .arg("--select")
             .output()
             .or_else(|_| {
                 std::process::Command::new("cce-files")
                     .arg("--select")
                     .output()
-            })
-            .ok()?;
+            });
         
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let trimmed = stdout.trim();
-            if !trimmed.is_empty() {
-                return Some(std::path::PathBuf::from(trimmed));
+        match res {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let trimmed = stdout.trim().to_string();
+                    if !trimmed.is_empty() {
+                        Ok(std::path::PathBuf::from(trimmed))
+                    } else {
+                        Err("No file selected".to_string())
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    if stderr.is_empty() {
+                        Err(format!("cce-files exited with code {}", output.status.code().unwrap_or(-1)))
+                    } else {
+                        Err(stderr)
+                    }
+                }
+            }
+            Err(e) => {
+                Err(format!("Failed to execute cce-files: {}", e))
             }
         }
-        None
     }
 
-    fn pick_file_to_save(&self) -> Option<std::path::PathBuf> {
-        let output = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
+    fn pick_file_to_save(&self) -> Result<std::path::PathBuf, String> {
+        let res = std::process::Command::new("/home/lsgalante/.local/bin/cce-files")
             .arg("--save")
             .output()
             .or_else(|_| {
                 std::process::Command::new("cce-files")
                     .arg("--save")
                     .output()
-            })
-            .ok()?;
+            });
         
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let trimmed = stdout.trim();
-            if !trimmed.is_empty() {
-                return Some(std::path::PathBuf::from(trimmed));
+        match res {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    let trimmed = stdout.trim().to_string();
+                    if !trimmed.is_empty() {
+                        Ok(std::path::PathBuf::from(trimmed))
+                    } else {
+                        Err("No file selected".to_string())
+                    }
+                } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                    if stderr.is_empty() {
+                        Err(format!("cce-files exited with code {}", output.status.code().unwrap_or(-1)))
+                    } else {
+                        Err(stderr)
+                    }
+                }
+            }
+            Err(e) => {
+                Err(format!("Failed to execute cce-files: {}", e))
             }
         }
-        None
     }
 
     fn update_raw_from_flat(&mut self) {
@@ -558,33 +586,42 @@ impl Application for DataEditorApp {
                 *exit = true;
             }
             AppMessage::OpenDocument => {
-                if let Some(path) = self.pick_file_to_open() {
-                    match std::fs::read_to_string(&path) {
-                        Ok(content) => {
-                            self.raw_json_editor.text = content;
-                            self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
-                            self.raw_json_editor.cursor_idx = 0;
-                            self.raw_json_editor.select_anchor = None;
-                            self.raw_json_editor.editing = false;
-                            
-                            self.flat_keys.clear();
-                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.raw_json_editor.text) {
-                                flatten_json(&val, "", &mut self.flat_keys);
-                                self.status_message = Some((format!("Opened {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
-                            } else {
-                                self.status_message = Some(("Loaded, but JSON is syntactically invalid".to_string(), true));
+                match self.pick_file_to_open() {
+                    Ok(path) => {
+                        match std::fs::read_to_string(&path) {
+                            Ok(content) => {
+                                self.raw_json_editor.text = content;
+                                self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
+                                self.raw_json_editor.cursor_idx = 0;
+                                self.raw_json_editor.select_anchor = None;
+                                self.raw_json_editor.editing = false;
+                                
+                                self.flat_keys.clear();
+                                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.raw_json_editor.text) {
+                                    flatten_json(&val, "", &mut self.flat_keys);
+                                    self.status_message = Some((format!("Opened {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                                } else {
+                                    self.status_message = Some(("Loaded, but JSON is syntactically invalid".to_string(), true));
+                                }
+                                
+                                self.selected_key_idx = None;
+                                self.scroll_y = 0.0;
+                                self.current_file_path = Some(path);
                             }
-                            
-                            self.selected_key_idx = None;
-                            self.scroll_y = 0.0;
-                            self.current_file_path = Some(path);
+                            Err(e) => {
+                                self.status_message = Some((format!("Error opening: {}", e), true));
+                            }
                         }
-                        Err(e) => {
-                            self.status_message = Some((format!("Error opening: {}", e), true));
+                        *needs_rebuild = true;
+                        self.needs_rebuild = true;
+                    }
+                    Err(e) => {
+                        if e != "No file selected" {
+                            self.status_message = Some((format!("File picker error: {}", e), true));
+                            *needs_rebuild = true;
+                            self.needs_rebuild = true;
                         }
                     }
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
                 }
             }
             AppMessage::SaveDocument => {
@@ -623,21 +660,30 @@ impl Application for DataEditorApp {
                     return;
                 }
                 
-                if let Some(path) = self.pick_file_to_save() {
-                    match std::fs::write(&path, content) {
-                        Ok(_) => {
-                            if self.raw_json_editor.editing {
-                                self.raw_json_editor.text = self.raw_json_editor.edit_buffer.clone();
+                match self.pick_file_to_save() {
+                    Ok(path) => {
+                        match std::fs::write(&path, content) {
+                            Ok(_) => {
+                                if self.raw_json_editor.editing {
+                                    self.raw_json_editor.text = self.raw_json_editor.edit_buffer.clone();
+                                }
+                                self.current_file_path = Some(path.clone());
+                                self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
                             }
-                            self.current_file_path = Some(path.clone());
-                            self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                            Err(e) => {
+                                self.status_message = Some((format!("Save failed: {}", e), true));
+                            }
                         }
-                        Err(e) => {
-                            self.status_message = Some((format!("Save failed: {}", e), true));
+                        *needs_rebuild = true;
+                        self.needs_rebuild = true;
+                    }
+                    Err(e) => {
+                        if e != "No file selected" {
+                            self.status_message = Some((format!("File picker error: {}", e), true));
+                            *needs_rebuild = true;
+                            self.needs_rebuild = true;
                         }
                     }
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
                 }
             }
             AppMessage::FormatJson => {
