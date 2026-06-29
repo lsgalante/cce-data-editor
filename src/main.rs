@@ -13,6 +13,7 @@ enum AppMessage {
     SaveDocument,
     SaveDocumentAs,
     FormatJson,
+    RefreshDocument,
     AddKey,
     ApplyValue,
     DeleteKey,
@@ -456,6 +457,7 @@ struct DataEditorApp {
     btn_save: Button,
     btn_save_as: Button,
     btn_format: Button,
+    btn_refresh: Button,
     btn_exit: Button,
 
     // Left Panel Form Edit
@@ -588,6 +590,7 @@ impl DataEditorApp {
         labels.extend(self.btn_save.text_labels());
         labels.extend(self.btn_save_as.text_labels());
         labels.extend(self.btn_format.text_labels());
+        labels.extend(self.btn_refresh.text_labels());
         labels.extend(self.btn_exit.text_labels());
         labels.extend(self.btn_add_key.text_labels());
         labels.extend(self.btn_apply_val.text_labels());
@@ -786,6 +789,7 @@ impl Application for DataEditorApp {
         let btn_save = Button::new(90.0, 8.0, 70.0, 26.0).with_label("Save");
         let btn_save_as = Button::new(170.0, 8.0, 80.0, 26.0).with_label("Save As");
         let btn_format = Button::new(260.0, 8.0, 80.0, 26.0).with_label("Format");
+        let btn_refresh = Button::new(350.0, 8.0, 80.0, 26.0).with_label("Refresh");
         let btn_exit = Button::new(720.0, 8.0, 70.0, 26.0).with_label("Exit");
 
         let mut new_key_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
@@ -827,6 +831,7 @@ impl Application for DataEditorApp {
             btn_save,
             btn_save_as,
             btn_format,
+            btn_refresh,
             btn_exit,
             flat_keys,
             selected_key_idx: None,
@@ -1003,6 +1008,40 @@ impl Application for DataEditorApp {
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
             }
+            AppMessage::RefreshDocument => {
+                if let Some(path) = &self.current_file_path {
+                    match std::fs::read_to_string(path) {
+                        Ok(content) => {
+                            self.raw_json_editor.text = content;
+                            self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
+                            self.raw_json_editor.cursor_idx = 0;
+                            self.raw_json_editor.select_anchor = None;
+                            self.raw_json_editor.editing = false;
+                            
+                            self.flat_keys.clear();
+                            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&self.raw_json_editor.text) {
+                                flatten_json(&val, "", &mut self.flat_keys);
+                                self.status_message = Some(("Refreshed from disk".to_string(), false));
+                            } else {
+                                self.status_message = Some(("Refreshed, but JSON is syntactically invalid".to_string(), true));
+                            }
+                            
+                            self.selected_key_idx = None;
+                            self.selected_value_editor.text.clear();
+                            self.selected_value_editor.edit_buffer.clear();
+                            self.selected_value_editor.editing = false;
+                            self.sync_preview_selection();
+                        }
+                        Err(e) => {
+                            self.status_message = Some((format!("Refresh failed: {}", e), true));
+                        }
+                    }
+                } else {
+                    self.status_message = Some(("No file is currently open".to_string(), true));
+                }
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
             AppMessage::AddKey => {
                 let new_key = if self.new_key_editor.editing { &self.new_key_editor.edit_buffer } else { &self.new_key_editor.text };
                 let trimmed = new_key.trim().to_string();
@@ -1133,6 +1172,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.btn_save.base().unwrap().id(), &mut (*self_ptr).btn_save as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_save_as.base().unwrap().id(), &mut (*self_ptr).btn_save_as as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_format.base().unwrap().id(), &mut (*self_ptr).btn_format as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_refresh.base().unwrap().id(), &mut (*self_ptr).btn_refresh as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_exit.base().unwrap().id(), &mut (*self_ptr).btn_exit as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_add_key.base().unwrap().id(), &mut (*self_ptr).btn_add_key as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_apply_val.base().unwrap().id(), &mut (*self_ptr).btn_apply_val as *mut Button as *mut (dyn Element + 'static));
@@ -1162,7 +1202,8 @@ impl Application for DataEditorApp {
             self.btn_save.set_rect(90.0, 8.0, 70.0, 26.0);
             self.btn_save_as.set_rect(170.0, 8.0, 80.0, 26.0);
             self.btn_format.set_rect(260.0, 8.0, 80.0, 26.0);
-            self.btn_exit.set_rect((self.width as f32 - 80.0).max(350.0), 8.0, 70.0, 26.0);
+            self.btn_refresh.set_rect(350.0, 8.0, 80.0, 26.0);
+            self.btn_exit.set_rect((self.width as f32 - 80.0).max(440.0), 8.0, 70.0, 26.0);
             
             // Bottom edit area in left panel
             let bottom_y = bottom_y_calc(self.height);
@@ -1261,6 +1302,7 @@ impl Application for DataEditorApp {
         quads.extend(self.btn_save.extra_quads());
         quads.extend(self.btn_save_as.extra_quads());
         quads.extend(self.btn_format.extra_quads());
+        quads.extend(self.btn_refresh.extra_quads());
         quads.extend(self.btn_exit.extra_quads());
         quads.extend(self.btn_add_key.extra_quads());
         quads.extend(self.btn_apply_val.extra_quads());
@@ -1284,6 +1326,7 @@ impl Application for DataEditorApp {
         if self.btn_save.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.btn_save_as.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.btn_format.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        if self.btn_refresh.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.btn_apply_val.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1345,6 +1388,12 @@ impl Application for DataEditorApp {
             changed = true;
             if state == ElementState::Released && self.btn_format.take_click() {
                 msg_out = Some(AppMessage::FormatJson);
+            }
+        }
+        if self.btn_refresh.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            if state == ElementState::Released && self.btn_refresh.take_click() {
+                msg_out = Some(AppMessage::RefreshDocument);
             }
         }
         if self.btn_exit.mouse_input(button, state, px, py, &mut self.ui_context) {
