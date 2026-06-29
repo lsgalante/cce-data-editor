@@ -462,7 +462,7 @@ impl DataEditorApp {
         };
         labels.push(TextLabel {
             text: format!("File: {}", file_name_str),
-            x: 550.0,
+            x: 420.0,
             y: 15.0,
             font_size: 12.0,
             color: [0xdd, 0xdd, 0xe2],
@@ -1107,36 +1107,39 @@ impl Application for DataEditorApp {
             let list_top = 52.0;
             let list_bottom = bottom_y_calc(self.height);
             let list_height = list_bottom - list_top;
-            self.tree_list.set_rect(10.0, list_top, 520.0, list_height);
+            self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
                 if let Some((row_x, row_y, _row_w, _row_h)) = self.tree_list.get_row_rect(selected_idx) {
-                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 120.0, 26.0);
-                    
                     let val = &self.flat_keys[selected_idx].1;
                     let key_name = &self.flat_keys[selected_idx].0;
                     let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
                     
                     if let serde_json::Value::String(s) = val {
                         if s.starts_with('#') {
-                            self.selected_color_editor.set_rect(row_x + 380.0, row_y + 1.0, 130.0, 26.0);
+                            self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         } else if is_font_type {
-                            self.selected_font_editor.set_rect(row_x + 380.0, row_y + 1.0, 130.0, 26.0);
+                            self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                             self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         } else {
+                            self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                             self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         }
                     } else if val.is_i64() {
-                        self.selected_spinbox_editor.set_rect(row_x + 380.0, row_y + 1.0, 130.0, 26.0);
+                        self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     } else {
+                        self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1155,9 +1158,9 @@ impl Application for DataEditorApp {
             }
             
             // Right pane raw editor
-            let right_w = (self.width as f32 - 560.0).max(100.0);
+            let right_w = (self.width as f32 - 420.0).max(100.0);
             let right_h = (self.height as f32 - 92.0).max(100.0);
-            self.raw_json_editor.set_rect(550.0, 52.0, right_w, right_h);
+            self.raw_json_editor.set_rect(410.0, 52.0, right_w, right_h);
             
             self.rebuild_text_items();
             self.ui_context.rebuild_spatial_grid();
@@ -1315,6 +1318,9 @@ impl Application for DataEditorApp {
                         
                         // Sync controls:
                         let val = &self.flat_keys[original_idx].1;
+                        let key_name = &self.flat_keys[original_idx].0;
+                        let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
+                        
                         if let serde_json::Value::String(s) = val {
                             if let Some(c) = parse_hex_color(s) {
                                 self.selected_color_editor.color = c;
@@ -1325,8 +1331,21 @@ impl Application for DataEditorApp {
                             self.selected_spinbox_editor.value = num as i32;
                         }
                         
-                        self.ui_context.set_focused(&mut self.selected_value_editor);
-                        TextBox::focus(&mut self.selected_value_editor);
+                        if let serde_json::Value::String(s) = val {
+                            if s.starts_with('#') {
+                                self.ui_context.set_focused(&mut self.selected_color_editor);
+                            } else if is_font_type {
+                                self.ui_context.set_focused(&mut self.selected_font_editor);
+                            } else {
+                                self.ui_context.set_focused(&mut self.selected_value_editor);
+                                TextBox::focus(&mut self.selected_value_editor);
+                            }
+                        } else if val.is_i64() {
+                            self.ui_context.set_focused(&mut self.selected_spinbox_editor);
+                        } else {
+                            self.ui_context.set_focused(&mut self.selected_value_editor);
+                            TextBox::focus(&mut self.selected_value_editor);
+                        }
                         self.sync_preview_selection();
                         changed = true;
                     }
@@ -1336,7 +1355,7 @@ impl Application for DataEditorApp {
             let bottom_y = bottom_y_calc(self.height);
             let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
             let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
-            let in_raw = px >= 550.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
             
             if !in_new_key && !in_sel_val && !in_raw {
                 self.raw_json_editor.unfocus();
