@@ -986,6 +986,10 @@ impl Application for DataEditorApp {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
+        if self.selected_font_editor.tick(_dt, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
 
         if self.selected_value_editor.take_change() {
             let mut exit = false;
