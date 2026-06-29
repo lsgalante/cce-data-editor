@@ -189,6 +189,7 @@ struct DataEditorApp {
     ui_context: cce_ui::context::UiContext,
     ctrl_pressed: bool,
     initial_focus: bool,
+    widgets_registered: bool,
 }
 
 impl DataEditorApp {
@@ -567,6 +568,7 @@ impl Application for DataEditorApp {
             ui_context: cce_ui::context::UiContext::new(),
             ctrl_pressed: false,
             initial_focus: true,
+            widgets_registered: false,
         }
     }
 
@@ -827,6 +829,25 @@ impl Application for DataEditorApp {
     }
 
     fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: LogicalSize, scale: f64) {
+        if !self.widgets_registered {
+            self.widgets_registered = true;
+            let self_ptr = self as *mut Self;
+            unsafe {
+                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), &mut (*self_ptr).btn_open as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_save.base().unwrap().id(), &mut (*self_ptr).btn_save as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_save_as.base().unwrap().id(), &mut (*self_ptr).btn_save_as as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_format.base().unwrap().id(), &mut (*self_ptr).btn_format as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_exit.base().unwrap().id(), &mut (*self_ptr).btn_exit as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_add_key.base().unwrap().id(), &mut (*self_ptr).btn_add_key as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_apply_val.base().unwrap().id(), &mut (*self_ptr).btn_apply_val as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_delete_key.base().unwrap().id(), &mut (*self_ptr).btn_delete_key as *mut Button as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.new_key_editor.base().unwrap().id(), &mut (*self_ptr).new_key_editor as *mut TextBox as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_value_editor.base().unwrap().id(), &mut (*self_ptr).selected_value_editor as *mut TextBox as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.raw_json_editor.base().unwrap().id(), &mut (*self_ptr).raw_json_editor as *mut TextBox as *mut (dyn Element + 'static));
+            }
+            self.ui_context.rebuild_spatial_grid();
+        }
+
         if self.initial_focus {
             self.initial_focus = false;
             self.ui_context.set_focused(&mut self.raw_json_editor);
@@ -862,6 +883,7 @@ impl Application for DataEditorApp {
             self.raw_json_editor.set_rect(410.0, 52.0, right_w, right_h);
             
             self.rebuild_text_items();
+            self.ui_context.rebuild_spatial_grid();
             self.needs_rebuild = false;
         }
 
