@@ -372,6 +372,84 @@ fn bottom_y_calc(height: u32) -> f32 {
     height as f32 - 180.0
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum TreeElement {
+    Section {
+        path: String,
+        name: String,
+        indent: usize,
+        collapsed: bool,
+    },
+    Leaf {
+        path: String,
+        name: String,
+        indent: usize,
+        val: serde_json::Value,
+        original_idx: usize,
+    }
+}
+
+fn build_tree(flat_keys: &[(String, serde_json::Value)], collapsed_sections: &std::collections::HashSet<String>) -> Vec<TreeElement> {
+    let mut items = Vec::new();
+    let mut seen_prefixes = std::collections::HashSet::new();
+
+    for (original_idx, (key_path, val)) in flat_keys.iter().enumerate() {
+        let tokens = parse_path(key_path);
+        let mut current_prefix = String::new();
+        let mut is_hidden = false;
+        
+        for i in 0..tokens.len() {
+            let token = &tokens[i];
+            let part_name = match token {
+                PathToken::Key(k) => {
+                    if current_prefix.is_empty() {
+                        current_prefix = k.clone();
+                    } else {
+                        current_prefix = format!("{}.{}", current_prefix, k);
+                    }
+                    k.clone()
+                }
+                PathToken::Index(idx) => {
+                    let s = format!("[{}]", idx);
+                    current_prefix = format!("{}{}", current_prefix, s);
+                    s
+                }
+            };
+
+            let is_last = i == tokens.len() - 1;
+            
+            if is_hidden {
+                continue;
+            }
+
+            if is_last {
+                items.push(TreeElement::Leaf {
+                    path: key_path.clone(),
+                    name: part_name,
+                    indent: i,
+                    val: val.clone(),
+                    original_idx,
+                });
+            } else {
+                if !seen_prefixes.contains(&current_prefix) {
+                    seen_prefixes.insert(current_prefix.clone());
+                    let collapsed = collapsed_sections.contains(&current_prefix);
+                    items.push(TreeElement::Section {
+                        path: current_prefix.clone(),
+                        name: part_name,
+                        indent: i,
+                        collapsed,
+                    });
+                }
+                if collapsed_sections.contains(&current_prefix) {
+                    is_hidden = true;
+                }
+            }
+        }
+    }
+    items
+}
+
 struct DataEditorApp {
     // Toolbar Buttons
     btn_open: Button,
@@ -413,6 +491,8 @@ struct DataEditorApp {
     ctrl_pressed: bool,
     initial_focus: bool,
     widgets_registered: bool,
+    tree_items: Vec<TreeElement>,
+    collapsed_sections: std::collections::HashSet<String>,
 }
 
 impl DataEditorApp {
@@ -457,6 +537,10 @@ impl DataEditorApp {
         }
         self.raw_json_editor.select_anchor = None;
         self.raw_json_editor.sync_editor_state();
+    }
+
+    fn rebuild_tree(&mut self) {
+        self.tree_items = build_tree(&self.flat_keys, &self.collapsed_sections);
     }
 
     fn add_textbox_labels(
@@ -620,57 +704,72 @@ impl DataEditorApp {
         let list_bottom = bottom_y_calc(self.height);
         let list_bounds = Some([list_left, list_top, list_right, list_bottom]);
 
-        for (i, (key_path, val)) in self.flat_keys.iter().enumerate() {
+        self.rebuild_tree();
+
+        for (i, item) in self.tree_items.iter().enumerate() {
             let row_y = list_top + i as f32 * 28.0 - self.scroll_y;
             if row_y + 28.0 < list_top || row_y > list_bottom {
                 continue;
             }
             
-            let display_key = if key_path.len() > 24 {
-                format!("...{}", &key_path[key_path.len() - 21..])
-            } else {
-                key_path.clone()
-            };
-            
-            let val_str = serde_json::to_string(val).unwrap_or_default();
-            let display_val = if val_str.len() > 18 {
-                format!("{}...", &val_str[..15])
-            } else {
-                val_str
-            };
-            
-            let color = if Some(i) == self.selected_key_idx {
-                [0x7d, 0xff, 0xff]
-            } else {
-                [0xcc, 0xcc, 0xd4]
-            };
-            
             let physical_size = 12.0 * scale;
             let metrics = Metrics::new(physical_size, physical_size * 1.4);
             
-            // Key Path
-            let mut buf_key = Buffer::new(&mut self.font_system, metrics.clone());
-            buf_key.set_text(&mut self.font_system, &display_key, Attrs::new(), glyphon::Shaping::Advanced);
-            buf_key.shape_until_scroll(&mut self.font_system, true);
-            self.text_items.push(TextItem {
-                buffer: buf_key,
-                x: list_left + 8.0,
-                y: row_y + 6.0,
-                color: glyphon::Color::rgb(color[0], color[1], color[2]),
-                bounds: list_bounds,
-            });
-            
-            // Value
-            let mut buf_val = Buffer::new(&mut self.font_system, metrics);
-            buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
-            buf_val.shape_until_scroll(&mut self.font_system, true);
-            self.text_items.push(TextItem {
-                buffer: buf_val,
-                x: list_left + 200.0,
-                y: row_y + 6.0,
-                color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
-                bounds: list_bounds,
-            });
+            match item {
+                TreeElement::Section { path: _, name, indent, collapsed } => {
+                    let display_text = format!("{} {}", if *collapsed { "▶" } else { "▼" }, name);
+                    let color = [0x61, 0xaf, 0xef]; // Sleek blue for section headers
+                    
+                    let mut buf_key = Buffer::new(&mut self.font_system, metrics);
+                    buf_key.set_text(&mut self.font_system, &display_text, Attrs::new(), glyphon::Shaping::Advanced);
+                    buf_key.shape_until_scroll(&mut self.font_system, true);
+                    self.text_items.push(TextItem {
+                        buffer: buf_key,
+                        x: list_left + 8.0 + *indent as f32 * 12.0,
+                        y: row_y + 6.0,
+                        color: glyphon::Color::rgb(color[0], color[1], color[2]),
+                        bounds: list_bounds,
+                    });
+                }
+                TreeElement::Leaf { path: _, name, indent, val, original_idx } => {
+                    let val_str = serde_json::to_string(val).unwrap_or_default();
+                    let display_val = if val_str.len() > 18 {
+                        format!("{}...", &val_str[..15])
+                    } else {
+                        val_str
+                    };
+                    
+                    let color = if Some(*original_idx) == self.selected_key_idx {
+                        [0x7d, 0xff, 0xff]
+                    } else {
+                        [0xcc, 0xcc, 0xd4]
+                    };
+                    
+                    // Display Key Name
+                    let mut buf_key = Buffer::new(&mut self.font_system, metrics.clone());
+                    buf_key.set_text(&mut self.font_system, name, Attrs::new(), glyphon::Shaping::Advanced);
+                    buf_key.shape_until_scroll(&mut self.font_system, true);
+                    self.text_items.push(TextItem {
+                        buffer: buf_key,
+                        x: list_left + 8.0 + *indent as f32 * 12.0,
+                        y: row_y + 6.0,
+                        color: glyphon::Color::rgb(color[0], color[1], color[2]),
+                        bounds: list_bounds,
+                    });
+                    
+                    // Display Value
+                    let mut buf_val = Buffer::new(&mut self.font_system, metrics);
+                    buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
+                    buf_val.shape_until_scroll(&mut self.font_system, true);
+                    self.text_items.push(TextItem {
+                        buffer: buf_val,
+                        x: list_left + 200.0,
+                        y: row_y + 6.0,
+                        color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
+                        bounds: list_bounds,
+                    });
+                }
+            }
         }
     }
 }
@@ -755,6 +854,8 @@ impl Application for DataEditorApp {
             ctrl_pressed: false,
             initial_focus: true,
             widgets_registered: false,
+            tree_items: Vec::new(),
+            collapsed_sections: std::collections::HashSet::new(),
         }
     }
 
@@ -1105,7 +1206,7 @@ impl Application for DataEditorApp {
         quads.push((390.0, list_top, 1.0, list_height, [0.18, 0.18, 0.22, 1.0]));
 
         // Draw left list rows
-        for i in 0..self.flat_keys.len() {
+        for i in 0..self.tree_items.len() {
             let row_y = list_top + i as f32 * 28.0 - self.scroll_y;
             if row_y + 28.0 < list_top || row_y > list_bottom {
                 continue;
@@ -1116,14 +1217,25 @@ impl Application for DataEditorApp {
             let draw_h = draw_bottom - draw_y;
             if draw_h <= 0.0 { continue; }
             
-            let bg_color = if Some(i) == self.selected_key_idx {
-                [0.15, 0.20, 0.30, 1.0]
-            } else if Some(i) == self.hovered_row_idx {
-                [0.12, 0.12, 0.16, 1.0]
-            } else if i % 2 == 0 {
-                [0.09, 0.09, 0.11, 1.0]
-            } else {
-                [0.08, 0.08, 0.10, 1.0]
+            let bg_color = match &self.tree_items[i] {
+                TreeElement::Section { .. } => {
+                    if Some(i) == self.hovered_row_idx {
+                        [0.10, 0.12, 0.18, 1.0]
+                    } else {
+                        [0.07, 0.07, 0.09, 1.0]
+                    }
+                }
+                TreeElement::Leaf { original_idx, .. } => {
+                    if Some(*original_idx) == self.selected_key_idx {
+                        [0.15, 0.20, 0.30, 1.0]
+                    } else if Some(i) == self.hovered_row_idx {
+                        [0.12, 0.12, 0.16, 1.0]
+                    } else if i % 2 == 0 {
+                        [0.09, 0.09, 0.11, 1.0]
+                    } else {
+                        [0.08, 0.08, 0.10, 1.0]
+                    }
+                }
             };
             
             quads.push((11.0, draw_y, 378.0, draw_h, bg_color));
@@ -1134,7 +1246,7 @@ impl Application for DataEditorApp {
         }
 
         // Draw left list scrollbar
-        let total_content_height = self.flat_keys.len() as f32 * 28.0;
+        let total_content_height = self.tree_items.len() as f32 * 28.0;
         let max_scroll_y = (total_content_height - list_height).max(0.0);
         if max_scroll_y > 0.0 {
             let track_h = list_height - 8.0;
@@ -1187,7 +1299,7 @@ impl Application for DataEditorApp {
         if px >= 10.0 && px <= 380.0 && py >= list_top && py <= list_bottom {
             let relative_y = py - list_top + self.scroll_y;
             let row_idx = (relative_y / 28.0) as usize;
-            let new_hover = if row_idx < self.flat_keys.len() { Some(row_idx) } else { None };
+            let new_hover = if row_idx < self.tree_items.len() { Some(row_idx) } else { None };
             if self.hovered_row_idx != new_hover {
                 self.hovered_row_idx = new_hover;
                 changed = true;
@@ -1277,18 +1389,31 @@ impl Application for DataEditorApp {
             if px >= 10.0 && px <= 380.0 && py >= list_top && py <= list_bottom {
                 let relative_y = py - list_top + self.scroll_y;
                 let row_idx = (relative_y / 28.0) as usize;
-                if row_idx < self.flat_keys.len() {
-                    self.selected_key_idx = Some(row_idx);
-                    
-                    let value_str = serde_json::to_string(&self.flat_keys[row_idx].1).unwrap_or_default();
-                    self.selected_value_editor.text = value_str;
-                    self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
-                    self.selected_value_editor.editing = false;
-                    
-                    self.ui_context.set_focused(&mut self.selected_value_editor);
-                    TextBox::focus(&mut self.selected_value_editor);
-                    self.sync_preview_selection();
-                    changed = true;
+                if row_idx < self.tree_items.len() {
+                    match &self.tree_items[row_idx] {
+                        TreeElement::Section { path, .. } => {
+                            if self.collapsed_sections.contains(path) {
+                                self.collapsed_sections.remove(path);
+                            } else {
+                                self.collapsed_sections.insert(path.clone());
+                            }
+                            self.rebuild_tree();
+                            changed = true;
+                        }
+                        TreeElement::Leaf { original_idx, .. } => {
+                            self.selected_key_idx = Some(*original_idx);
+                            
+                            let value_str = serde_json::to_string(&self.flat_keys[*original_idx].1).unwrap_or_default();
+                            self.selected_value_editor.text = value_str;
+                            self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                            self.selected_value_editor.editing = false;
+                            
+                            self.ui_context.set_focused(&mut self.selected_value_editor);
+                            TextBox::focus(&mut self.selected_value_editor);
+                            self.sync_preview_selection();
+                            changed = true;
+                        }
+                    }
                 }
             } else {
                 let bottom_y = bottom_y_calc(self.height);
@@ -1325,7 +1450,7 @@ impl Application for DataEditorApp {
                 MouseScrollDelta::LineDelta(_, y) => -y * 24.0,
                 MouseScrollDelta::PixelDelta(p) => -p.y as f32,
             };
-            let total_content_height = self.flat_keys.len() as f32 * 28.0;
+            let total_content_height = self.tree_items.len() as f32 * 28.0;
             let max_scroll_y = (total_content_height - list_height).max(0.0);
             let old_scroll = self.scroll_y;
             self.scroll_y = (self.scroll_y + scroll_amount).clamp(0.0, max_scroll_y);
