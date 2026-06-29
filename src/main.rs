@@ -276,7 +276,9 @@ impl DataEditorApp {
                                     }
                                     serde_json::Value::String(s) => {
                                         if s.starts_with('#') {
-                                            (format!("\"{}\"", s), Some("color"))
+                                            let s_clean = s.trim_start_matches('#');
+                                            let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
+                                            (format!("\"{}\"", s), Some(ty))
                                         } else {
                                             (format!("\"{}\"", s), None)
                                         }
@@ -302,7 +304,9 @@ impl DataEditorApp {
                                 }
                                 serde_json::Value::String(s) => {
                                     if s.starts_with('#') {
-                                        (format!("\"{}\"", s), Some("color"))
+                                        let s_clean = s.trim_start_matches('#');
+                                        let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
+                                        (format!("\"{}\"", s), Some(ty))
                                     } else {
                                         (format!("\"{}\"", s), None)
                                     }
@@ -956,7 +960,7 @@ impl Application for DataEditorApp {
         }
         if self.selected_color_editor.take_change() {
             if let Some(idx) = self.selected_key_idx {
-                let hex_str = format_hex_color(self.selected_color_editor.color);
+                let hex_str = self.selected_color_editor.get_value_string().unwrap_or_else(|| format_hex_color(self.selected_color_editor.color));
                 let new_val = serde_json::Value::String(hex_str.clone());
                 self.flat_keys[idx].1 = new_val;
                 self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
@@ -1322,8 +1326,11 @@ impl Application for DataEditorApp {
                         let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
                         
                         if let serde_json::Value::String(s) = val {
-                            if let Some(c) = parse_hex_color(s) {
-                                self.selected_color_editor.color = c;
+                            if let Some(rgba) = parse_hex_color_rgba(s) {
+                                self.selected_color_editor.color = [rgba[0], rgba[1], rgba[2]];
+                                self.selected_color_editor.alpha = rgba[3];
+                                let clean_s = s.trim_matches(|c| c == '"' || c == '\'' || c == ' ').trim_start_matches('#');
+                                self.selected_color_editor.with_alpha = clean_s.len() == 8;
                             } else {
                                 self.selected_font_editor.font_family = s.clone();
                             }
@@ -1479,17 +1486,27 @@ impl Application for DataEditorApp {
     }
 }
 
-fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+fn parse_hex_color_rgba(s: &str) -> Option<[u8; 4]> {
     let s = s.trim_matches(|c| c == '"' || c == '\'' || c == ' ');
     let s = s.trim_start_matches('#');
-    if s.len() == 6 {
+    if s.len() == 8 {
         let r = u8::from_str_radix(&s[0..2], 16).ok()?;
         let g = u8::from_str_radix(&s[2..4], 16).ok()?;
         let b = u8::from_str_radix(&s[4..6], 16).ok()?;
-        Some([r, g, b])
+        let a = u8::from_str_radix(&s[6..8], 16).ok()?;
+        Some([r, g, b, a])
+    } else if s.len() == 6 {
+        let r = u8::from_str_radix(&s[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&s[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&s[4..6], 16).ok()?;
+        Some([r, g, b, 255])
     } else {
         None
     }
+}
+
+fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
+    parse_hex_color_rgba(s).map(|rgba| [rgba[0], rgba[1], rgba[2]])
 }
 
 fn format_hex_color(color: [u8; 3]) -> String {
