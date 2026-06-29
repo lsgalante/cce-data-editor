@@ -254,78 +254,106 @@ struct DataEditorApp {
     widgets_registered: bool,
 }
 
-impl DataEditorApp {
-    fn json_to_kdl_string(&self, val: &serde_json::Value) -> String {
-        let mut out = String::new();
-        if let serde_json::Value::Object(map) = val {
-            for (sec_name, sec_val) in map {
-                out.push_str(&format!("{} {{\n", sec_name));
-                if let serde_json::Value::Object(sec_map) = sec_val {
-                    for (key, k_val) in sec_map {
-                        if let serde_json::Value::Object(nested_map) = k_val {
-                            let mut prop_parts = Vec::new();
-                            for (prop_name, prop_val) in nested_map {
-                                let (val_str, val_ty) = match prop_val {
-                                    serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
-                                    serde_json::Value::Number(num) => {
-                                        if num.is_f64() {
-                                            (num.to_string(), Some("f64"))
-                                        } else {
-                                            (num.to_string(), Some("i64"))
-                                        }
-                                    }
-                                    serde_json::Value::String(s) => {
-                                        if s.starts_with('#') {
-                                            let s_clean = s.trim_start_matches('#');
-                                            let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
-                                            (format!("\"{}\"", s), Some(ty))
-                                        } else {
-                                            (format!("\"{}\"", s), None)
-                                        }
-                                    }
-                                    _ => (prop_val.to_string(), None),
-                                };
-                                if let Some(ty) = val_ty {
-                                    prop_parts.push(format!("{}=({}){}", prop_name, ty, val_str));
-                                } else {
-                                    prop_parts.push(format!("{}={}", prop_name, val_str));
-                                }
-                            }
-                            out.push_str(&format!("    {} {}\n", key, prop_parts.join(" ")));
-                        } else {
-                            let (val_str, val_ty) = match k_val {
-                                serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
-                                serde_json::Value::Number(num) => {
-                                    if num.is_f64() {
-                                        (num.to_string(), Some("f64"))
-                                    } else {
-                                        (num.to_string(), Some("i64"))
-                                    }
-                                }
-                                serde_json::Value::String(s) => {
-                                    if s.starts_with('#') {
-                                        let s_clean = s.trim_start_matches('#');
-                                        let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
-                                        (format!("\"{}\"", s), Some(ty))
-                                    } else {
-                                        (format!("\"{}\"", s), None)
-                                    }
-                                }
-                                _ => (k_val.to_string(), None),
-                            };
-                            if let Some(ty) = val_ty {
-                                out.push_str(&format!("    {} ({}){}\n", key, ty, val_str));
+fn value_to_kdl(key: &str, val: &serde_json::Value, indent: usize) -> String {
+    let indent_str = "    ".repeat(indent);
+    match val {
+        serde_json::Value::Object(map) => {
+            let has_objects = map.values().any(|v| v.is_object());
+            if has_objects {
+                let mut out = format!("{}{} {{\n", indent_str, key);
+                for (k, v) in map {
+                    out.push_str(&value_to_kdl(k, v, indent + 1));
+                }
+                out.push_str(&format!("{}}}\n", indent_str));
+                out
+            } else {
+                let mut prop_parts = Vec::new();
+                for (prop_name, prop_val) in map {
+                    let (val_str, val_ty) = match prop_val {
+                        serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
+                        serde_json::Value::Number(num) => {
+                            if num.is_f64() {
+                                (num.to_string(), Some("f64"))
                             } else {
-                                out.push_str(&format!("    {} {}\n", key, val_str));
+                                (num.to_string(), Some("i64"))
                             }
                         }
+                        serde_json::Value::String(s) => {
+                            if s.starts_with('#') {
+                                let s_clean = s.trim_start_matches('#');
+                                let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
+                                (format!("\"{}\"", s), Some(ty))
+                            } else {
+                                (format!("\"{}\"", s), None)
+                            }
+                        }
+                        _ => (prop_val.to_string(), None),
+                    };
+                    if let Some(ty) = val_ty {
+                        prop_parts.push(format!("{}=({}){}", prop_name, ty, val_str));
+                    } else {
+                        prop_parts.push(format!("{}={}", prop_name, val_str));
                     }
                 }
-                out.push_str("}\n");
+                format!("{}{} {}\n", indent_str, key, prop_parts.join(" "))
             }
         }
-        out
+        serde_json::Value::Array(arr) => {
+            let mut out = String::new();
+            for item in arr {
+                out.push_str(&value_to_kdl(key, item, indent));
+            }
+            out
+        }
+        _ => {
+            let (val_str, val_ty) = match val {
+                serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
+                serde_json::Value::Number(num) => {
+                    if num.is_f64() {
+                        (num.to_string(), Some("f64"))
+                    } else {
+                        (num.to_string(), Some("i64"))
+                    }
+                }
+                serde_json::Value::String(s) => {
+                    if s.starts_with('#') {
+                        let s_clean = s.trim_start_matches('#');
+                        let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
+                        (format!("\"{}\"", s), Some(ty))
+                    } else {
+                        (format!("\"{}\"", s), None)
+                    }
+                }
+                _ => (val.to_string(), None),
+            };
+            if let Some(ty) = val_ty {
+                format!("{}{} ({}){}\n", indent_str, key, ty, val_str)
+            } else {
+                format!("{}{} {}\n", indent_str, key, val_str)
+            }
+        }
     }
+}
+
+fn json_to_kdl_string(val: &serde_json::Value) -> String {
+    let mut out = String::new();
+    if let serde_json::Value::Object(map) = val {
+        for (sec_name, sec_val) in map {
+            if let serde_json::Value::Object(sec_map) = sec_val {
+                out.push_str(&format!("{} {{\n", sec_name));
+                for (k, v) in sec_map {
+                    out.push_str(&value_to_kdl(k, v, 1));
+                }
+                out.push_str("}\n");
+            } else {
+                out.push_str(&value_to_kdl(sec_name, sec_val, 0));
+            }
+        }
+    }
+    out
+}
+
+impl DataEditorApp {
 
     fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
         println!("[DEBUG] pick_file_to_open: Executing XDG desktop portal file chooser");
@@ -345,7 +373,7 @@ impl DataEditorApp {
 
     fn update_raw_from_flat(&mut self) {
         let root = unflatten_json(&self.flat_keys);
-        let pretty = self.json_to_kdl_string(&root);
+        let pretty = json_to_kdl_string(&root);
         self.raw_json_editor.text = pretty;
         self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
         self.raw_json_editor.sync_editor_state();
@@ -1523,4 +1551,34 @@ fn main() {
     let _guard = rt.enter();
     
     cce_ui::engine::run::<DataEditorApp>();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kdl_roundtrip() {
+        let content = std::fs::read_to_string("/home/lsgalante/.config/cce/config.kdl").unwrap();
+        let val = cce_ui::config::parse_kdl_to_json(&content);
+        let mut flat = Vec::new();
+        flatten_json(&val, "", &mut flat);
+        
+        let mut found = false;
+        for (k, v) in &mut flat {
+            if k == "style.status.background_color" {
+                *v = serde_json::Value::String("#151520e6".to_string());
+                found = true;
+            }
+        }
+        assert!(found, "Should find style.status.background_color!");
+
+        let root = unflatten_json(&flat);
+        let new_kdl = json_to_kdl_string(&root);
+        println!("Generated KDL:\n{}", new_kdl);
+        match new_kdl.parse::<kdl::KdlDocument>() {
+            Ok(_) => println!("Parsed OK!"),
+            Err(e) => panic!("Failed to parse generated KDL: {}", e),
+        }
+    }
 }
