@@ -694,17 +694,19 @@ impl DataEditorApp {
                         });
                     }
                     
-                    // Display Value
-                    let mut buf_val = Buffer::new(&mut self.font_system, metrics);
-                    buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
-                    buf_val.shape_until_scroll(&mut self.font_system, true);
-                    self.text_items.push(TextItem {
-                        buffer: buf_val,
-                        x: list_left + 245.0,
-                        y: row_y + 6.0,
-                        color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
-                        bounds: list_bounds,
-                    });
+                    // Display Value (only if not currently being edited inline)
+                    if Some(*original_idx) != self.selected_key_idx {
+                        let mut buf_val = Buffer::new(&mut self.font_system, metrics);
+                        buf_val.set_text(&mut self.font_system, &display_val, Attrs::new(), glyphon::Shaping::Advanced);
+                        buf_val.shape_until_scroll(&mut self.font_system, true);
+                        self.text_items.push(TextItem {
+                            buffer: buf_val,
+                            x: list_left + 245.0,
+                            y: row_y + 6.0,
+                            color: glyphon::Color::rgb(0x83, 0x83, 0x8a),
+                            bounds: list_bounds,
+                        });
+                    }
                 }
             }
         }
@@ -732,8 +734,8 @@ impl Application for DataEditorApp {
 
         let mut selected_value_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
         selected_value_editor.set_placeholder("value (e.g. 42, true, \"hello\")");
-        let btn_apply_val = Button::new(280.0, 490.0, 48.0, 26.0).with_label("Set");
-        let btn_delete_key = Button::new(332.0, 490.0, 48.0, 26.0).with_label("Del");
+        let btn_apply_val = Button::new(10.0, 490.0, 100.0, 26.0).with_label("Apply");
+        let btn_delete_key = Button::new(120.0, 490.0, 100.0, 26.0).with_label("Delete");
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -1068,6 +1070,10 @@ impl Application for DataEditorApp {
     }
 
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
+        if self.selected_value_editor.take_change() {
+            let mut exit = false;
+            self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
+        }
         if self.raw_json_editor.take_change() {
             let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
             if content.parse::<kdl::KdlDocument>().is_ok() {
@@ -1150,9 +1156,31 @@ impl Application for DataEditorApp {
             self.new_key_editor.set_rect(10.0, bottom_y + 10.0, 260.0, 26.0);
             self.btn_add_key.set_rect(280.0, bottom_y + 10.0, 100.0, 26.0);
             
-            self.selected_value_editor.set_rect(10.0, bottom_y + 70.0, 260.0, 26.0);
-            self.btn_apply_val.set_rect(280.0, bottom_y + 70.0, 48.0, 26.0);
-            self.btn_delete_key.set_rect(332.0, bottom_y + 70.0, 48.0, 26.0);
+            self.btn_apply_val.set_rect(10.0, bottom_y + 70.0, 100.0, 26.0);
+            self.btn_delete_key.set_rect(120.0, bottom_y + 70.0, 100.0, 26.0);
+
+            // Position the selected value editor inline inside the list if visible
+            let list_top = 52.0;
+            let list_bottom = bottom_y_calc(self.height);
+            if let Some(selected_idx) = self.selected_key_idx {
+                if let Some(row_idx) = self.tree_items.iter().position(|item| {
+                    match item {
+                        TreeElement::Leaf { original_idx, .. } => *original_idx == selected_idx,
+                        _ => false,
+                    }
+                }) {
+                    let row_y = list_top + row_idx as f32 * 28.0 - self.scroll_y;
+                    if row_y >= list_top && row_y + 26.0 <= list_bottom {
+                        self.selected_value_editor.set_rect(255.0, row_y + 1.0, 125.0, 26.0);
+                    } else {
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    }
+                } else {
+                    self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                }
+            } else {
+                self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+            }
             
             // Right pane raw editor
             let right_w = (self.width as f32 - 420.0).max(100.0);
