@@ -3,7 +3,7 @@ use glyphon::{FontSystem, Buffer, Metrics, Attrs};
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
-    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector
+    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown
 };
 
 #[derive(Debug, Clone)]
@@ -230,6 +230,7 @@ struct DataEditorApp {
     selected_color_editor: ColorSelector,
     selected_spinbox_editor: Spinbox,
     selected_font_editor: FontSelector,
+    selected_choice_editor: Dropdown,
     btn_apply_val: Button,
     btn_delete_key: Button,
 
@@ -615,6 +616,7 @@ impl Application for DataEditorApp {
         let selected_color_editor = ColorSelector::new([255, 255, 255]);
         let selected_spinbox_editor = Spinbox::new(0, -1000000, 1000000, 1);
         let selected_font_editor = FontSelector::new(String::new());
+        let selected_choice_editor = Dropdown::new(Vec::new(), 0);
         let btn_apply_val = Button::new(10.0, 490.0, 100.0, 26.0).with_label("Apply");
         let btn_delete_key = Button::new(120.0, 490.0, 100.0, 26.0).with_label("Delete");
 
@@ -665,6 +667,7 @@ impl Application for DataEditorApp {
             selected_color_editor,
             selected_spinbox_editor,
             selected_font_editor,
+            selected_choice_editor,
             btn_apply_val,
             btn_delete_key,
             raw_json_editor,
@@ -990,6 +993,10 @@ impl Application for DataEditorApp {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
+        if self.selected_choice_editor.tick(_dt, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
 
         if self.selected_value_editor.take_change() {
             let mut exit = false;
@@ -1025,6 +1032,34 @@ impl Application for DataEditorApp {
         if self.selected_font_editor.take_change() {
             if let Some(idx) = self.selected_key_idx {
                 let new_val = serde_json::Value::String(self.selected_font_editor.font_family.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                self.selected_value_editor.editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if self.selected_choice_editor.take_change() {
+            if let Some(idx) = self.selected_key_idx {
+                let selected_opt = self.selected_choice_editor.options[self.selected_choice_editor.selected].clone();
+                let new_val = match &self.flat_keys[idx].1 {
+                    serde_json::Value::Bool(_) => {
+                        serde_json::Value::Bool(selected_opt.parse::<bool>().unwrap_or(false))
+                    }
+                    serde_json::Value::Number(_) => {
+                        if let Ok(i) = selected_opt.parse::<i64>() {
+                            serde_json::Value::Number(i.into())
+                        } else if let Ok(f) = selected_opt.parse::<f64>() {
+                            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
+                        } else {
+                            serde_json::Value::String(selected_opt)
+                        }
+                    }
+                    _ => serde_json::Value::String(selected_opt),
+                };
                 self.flat_keys[idx].1 = new_val;
                 self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
                 self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
@@ -1092,6 +1127,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), &mut (*self_ptr).selected_spinbox_editor as *mut Spinbox as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
                 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_save.as_ptr_mut(), &mut self.ui_context);
@@ -1108,6 +1144,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.selected_color_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_font_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_choice_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
@@ -1157,16 +1194,57 @@ impl Application for DataEditorApp {
                     let key_name = &self.flat_keys[selected_idx].0;
                     let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
                     
-                    if let serde_json::Value::String(s) = val {
-                        if s.starts_with('#') {
-                            self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        } else if is_font_type {
-                            self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                    let mut is_menu_type = false;
+                    let mut menu_options = Vec::new();
+                    if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
+                        if annotation.starts_with("menu:") {
+                            is_menu_type = true;
+                            let opts_str = annotation.trim_start_matches("menu:");
+                            menu_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
+                        }
+                    }
+
+                    if is_menu_type {
+                        self.selected_choice_editor.options = menu_options.clone();
+                        let val_str = match val {
+                            serde_json::Value::String(st) => st.clone(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            _ => String::new(),
+                        };
+                        if let Some(pos) = menu_options.iter().position(|o| o == &val_str) {
+                            self.selected_choice_editor.selected = pos;
+                        } else {
+                            self.selected_choice_editor.selected = 0;
+                        }
+                        self.selected_choice_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    } else {
+                        self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        if let serde_json::Value::String(s) = val {
+                            if s.starts_with('#') {
+                                self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            } else if is_font_type {
+                                self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            } else {
+                                self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            }
+                        } else if val.is_i64() {
+                            self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                             self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         } else {
                             self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
@@ -1174,28 +1252,20 @@ impl Application for DataEditorApp {
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         }
-                    } else if val.is_i64() {
-                        self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                    } else {
-                        self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     }
                 } else {
                     self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
             // Right pane raw editor
@@ -1250,6 +1320,7 @@ impl Application for DataEditorApp {
         if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
         if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
         if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1344,6 +1415,10 @@ impl Application for DataEditorApp {
             changed = true;
             editor_handled = true;
         }
+        if self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            editor_handled = true;
+        }
         if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
@@ -1369,7 +1444,30 @@ impl Application for DataEditorApp {
                         let key_name = &self.flat_keys[original_idx].0;
                         let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
                         
-                        if let serde_json::Value::String(s) = val {
+                        let mut is_menu_type = false;
+                        let mut menu_options = Vec::new();
+                        if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
+                            if annotation.starts_with("menu:") {
+                                is_menu_type = true;
+                                let opts_str = annotation.trim_start_matches("menu:");
+                                menu_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
+                            }
+                        }
+
+                        if is_menu_type {
+                            self.selected_choice_editor.options = menu_options.clone();
+                            let val_str = match val {
+                                serde_json::Value::String(st) => st.clone(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                serde_json::Value::Number(n) => n.to_string(),
+                                _ => String::new(),
+                            };
+                            if let Some(pos) = menu_options.iter().position(|o| o == &val_str) {
+                                self.selected_choice_editor.selected = pos;
+                            } else {
+                                self.selected_choice_editor.selected = 0;
+                            }
+                        } else if let serde_json::Value::String(s) = val {
                             if let Some(rgba) = parse_hex_color_rgba(s) {
                                 self.selected_color_editor.color = [rgba[0], rgba[1], rgba[2]];
                                 self.selected_color_editor.alpha = rgba[3];
@@ -1382,7 +1480,9 @@ impl Application for DataEditorApp {
                             self.selected_spinbox_editor.value = num as i32;
                         }
                         
-                        if let serde_json::Value::String(s) = val {
+                        if is_menu_type {
+                            self.ui_context.set_focused(&mut self.selected_choice_editor);
+                        } else if let serde_json::Value::String(s) = val {
                             if s.starts_with('#') {
                                 self.ui_context.set_focused(&mut self.selected_color_editor);
                             } else if is_font_type {
@@ -1415,6 +1515,7 @@ impl Application for DataEditorApp {
                 self.selected_color_editor.unfocus();
                 self.selected_spinbox_editor.unfocus();
                 self.selected_font_editor.unfocus();
+                self.selected_choice_editor.unfocus();
                 self.tree_list.unfocus();
                 changed = true;
             }
@@ -1444,6 +1545,10 @@ impl Application for DataEditorApp {
             self.needs_rebuild = true;
         }
         if self.selected_font_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.selected_choice_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -1513,6 +1618,7 @@ impl Application for DataEditorApp {
             if self.selected_color_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_spinbox_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_font_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
+            if self.selected_choice_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.new_key_editor.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
                 if event.state == ElementState::Pressed && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter) {
