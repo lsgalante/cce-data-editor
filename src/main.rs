@@ -1509,7 +1509,7 @@ impl Application for DataEditorApp {
                     }
                 }
             }
-        } else if button == MouseButton::Left && state == ElementState::Pressed {
+        } else if !editor_handled && button == MouseButton::Left && state == ElementState::Pressed {
             let bottom_y = bottom_y_calc(self.height);
             let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
             let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
