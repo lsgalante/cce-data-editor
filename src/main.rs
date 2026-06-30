@@ -1285,9 +1285,6 @@ impl Application for DataEditorApp {
             self.needs_rebuild = false;
         }
 
-        // 1. Editor Window Background
-        quads.push((0.0, 0.0, self.width as f32, self.height as f32, [0.05, 0.05, 0.07, 1.0]));
-
         // 2. Toolbar Header
         quads.push((0.0, 0.0, self.width as f32, 42.0, [0.08, 0.08, 0.12, 1.0]));
         quads.push((0.0, 42.0, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
@@ -1296,8 +1293,6 @@ impl Application for DataEditorApp {
         let status_y = self.height as f32 - 30.0;
         quads.push((0.0, status_y, self.width as f32, 30.0, [0.08, 0.08, 0.10, 1.0]));
         quads.push((0.0, status_y, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
-        
-
 
         // 5. Collect all quads recursively from Backplate
         quads.extend(self.root_window.all_quads(&self.ui_context));
@@ -1309,6 +1304,17 @@ impl Application for DataEditorApp {
             self.ui_context.register_popover(&self.selected_choice_editor);
             cce_ui::widget::popovers::register(&self.selected_choice_editor);
         }
+    }
+
+    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: LogicalSize, scale: f64) {
+        if self.width != size.width as u32 || self.height != size.height as u32 || self.scale_factor != scale {
+            self.width = size.width as u32;
+            self.height = size.height as u32;
+            self.scale_factor = scale;
+            cce_ui::scale::set_scale_factor(scale as f32);
+            self.needs_rebuild = true;
+        }
+        quads.extend(self.root_window.all_rounded_quads(&self.ui_context));
     }
 
     fn text_items(&self) -> &[TextItem] {
