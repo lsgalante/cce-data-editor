@@ -1323,26 +1323,33 @@ impl Application for DataEditorApp {
             }
         }
 
+        let mut editor_handled = false;
         if self.new_key_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
         if self.selected_value_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
         if self.selected_color_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
         if self.selected_spinbox_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
         if self.selected_font_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
         if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            editor_handled = true;
         }
 
-        if self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if !editor_handled && self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             if let Some(clicked_item) = self.tree_list.take_clicked_item() {
                 match clicked_item {
