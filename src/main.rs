@@ -1307,6 +1307,10 @@ impl Application for DataEditorApp {
         &self.text_items
     }
 
+    fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
+        cce_ui::layout::render_popovers(pc, &self.ui_context);
+    }
+
     fn handle_pointer_move(&mut self, pos: LogicalPosition, needs_rebuild: &mut bool) {
         let mut changed = false;
         let px = pos.x as f32;
@@ -1422,7 +1426,10 @@ impl Application for DataEditorApp {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        println!("[DEBUG DROPDOWN MAIN] calling mouse_input: button={:?}, state={:?}, pos=({:.1}, {:.1})", button, state, px, py);
+        let ret = self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context);
+        println!("[DEBUG DROPDOWN MAIN] mouse_input returned: {}, editor_handled before={}", ret, editor_handled);
+        if ret {
             changed = true;
             editor_handled = true;
         }
