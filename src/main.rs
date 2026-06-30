@@ -558,6 +558,13 @@ impl DataEditorApp {
             scale,
         );
         Self::add_element_labels(
+            &self.selected_choice_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
             &self.new_key_editor,
             &self.ui_context,
             &mut self.font_system,
