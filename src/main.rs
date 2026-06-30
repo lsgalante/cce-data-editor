@@ -1426,10 +1426,7 @@ impl Application for DataEditorApp {
             changed = true;
             editor_handled = true;
         }
-        println!("[DEBUG DROPDOWN MAIN] calling mouse_input: button={:?}, state={:?}, pos=({:.1}, {:.1})", button, state, px, py);
-        let ret = self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context);
-        println!("[DEBUG DROPDOWN MAIN] mouse_input returned: {}, editor_handled before={}", ret, editor_handled);
-        if ret {
+        if self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
         }
