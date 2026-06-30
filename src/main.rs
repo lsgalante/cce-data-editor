@@ -1301,6 +1301,14 @@ impl Application for DataEditorApp {
 
         // 5. Collect all quads recursively from Backplate
         quads.extend(self.root_window.all_quads(&self.ui_context));
+
+        // 6. Popovers registration (since this app bypasses the layout engine)
+        self.ui_context.clear_popovers();
+        cce_ui::widget::popovers::clear();
+        if self.selected_choice_editor.popover_rect().is_some() {
+            self.ui_context.register_popover(&self.selected_choice_editor);
+            cce_ui::widget::popovers::register(&self.selected_choice_editor);
+        }
     }
 
     fn text_items(&self) -> &[TextItem] {
