@@ -1317,7 +1317,7 @@ impl Application for DataEditorApp {
 
             // Position tree_list
             let list_top = 52.0;
-            let list_bottom = bottom_y_calc(self.height);
+            let list_bottom = bottom_y_calc(self.height) - 25.0;
             let list_height = list_bottom - list_top;
             self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
 
