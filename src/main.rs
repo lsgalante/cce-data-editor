@@ -1520,6 +1520,7 @@ impl Application for DataEditorApp {
             if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_keybind_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_bool_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
             if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1638,6 +1639,10 @@ impl Application for DataEditorApp {
             editor_handled = true;
         }
         if self.selected_keybind_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            editor_handled = true;
+        }
+        if self.selected_bool_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
         }
