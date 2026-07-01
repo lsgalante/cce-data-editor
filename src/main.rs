@@ -676,6 +676,23 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
+
+        if cce_ui::widget::context_menu::is_visible() {
+            for label in cce_ui::widget::context_menu::text_labels() {
+                let physical_size = label.font_size * scale;
+                let metrics = Metrics::new(physical_size, physical_size * 1.4);
+                let mut buf = Buffer::new(&mut self.font_system, metrics);
+                buf.set_text(&mut self.font_system, &label.text, Attrs::new(), glyphon::Shaping::Advanced);
+                buf.shape_until_scroll(&mut self.font_system, true);
+                self.text_items.push(TextItem {
+                    buffer: buf,
+                    x: label.x,
+                    y: label.y,
+                    color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
+                    bounds: None,
+                });
+            }
+        }
     }
 }
 
@@ -1409,6 +1426,10 @@ impl Application for DataEditorApp {
         // 5. Collect all quads recursively from Backplate
         quads.extend(self.root_window.all_quads(&self.ui_context));
 
+        if cce_ui::widget::context_menu::is_visible() {
+            quads.extend(cce_ui::widget::context_menu::extra_quads());
+        }
+
         // 6. Popovers registration (since this app bypasses the layout engine)
         self.ui_context.clear_popovers();
         cce_ui::widget::popovers::clear();
@@ -1446,25 +1467,31 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
-        if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_save.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_save_as.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_format.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_refresh.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_apply_val.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.btn_delete_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        
-        if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-        if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        if cce_ui::widget::context_menu::is_visible() {
+            if cce_ui::widget::context_menu::cursor_moved(px, py) {
+                changed = true;
+            }
+        } else {
+            if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_save.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_save_as.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_format.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_refresh.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_apply_val.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.btn_delete_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            
+            if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
-        if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+        }
 
         if changed {
             *needs_rebuild = true;
@@ -1478,6 +1505,17 @@ impl Application for DataEditorApp {
         let mut msg_out = None;
         let px = pos.x as f32;
         let py = pos.y as f32;
+
+        if cce_ui::widget::context_menu::is_visible() {
+            if cce_ui::widget::context_menu::mouse_input(button, state, px, py) {
+                changed = true;
+            }
+            if changed {
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+            return None;
+        }
 
         if self.btn_open.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
@@ -1707,6 +1745,13 @@ impl Application for DataEditorApp {
 
     fn handle_key_input(&mut self, event: &KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         self.ctrl_pressed = event.ctrl;
+
+        if event.state == ElementState::Pressed && cce_ui::widget::context_menu::is_visible() {
+            cce_ui::widget::context_menu::hide();
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+            return None;
+        }
 
         if event.state == ElementState::Pressed && self.status_message.is_some() {
             self.status_message = None;
