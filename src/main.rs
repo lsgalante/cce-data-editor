@@ -101,6 +101,18 @@ fn find_kdl_span_in_doc(doc: &kdl::KdlDocument, tokens: &[PathToken]) -> Option<
                         let span = node.span();
                         return Some((span.offset(), span.offset() + span.len()));
                     }
+                } else if tokens.len() == 2 {
+                    if let PathToken::Key(prop_key) = &tokens[1] {
+                        if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
+                            let span = entry.span();
+                            return Some((span.offset(), span.offset() + span.len()));
+                        }
+                    }
+                    if let Some(children) = node.children() {
+                        if let Some(span) = find_kdl_span_in_doc(children, &tokens[1..]) {
+                            return Some(span);
+                        }
+                    }
                 } else if let Some(children) = node.children() {
                     return find_kdl_span_in_doc(children, &tokens[1..]);
                 }
@@ -1905,6 +1917,20 @@ mod tests {
         match new_kdl.parse::<kdl::KdlDocument>() {
             Ok(_) => println!("Parsed OK!"),
             Err(e) => panic!("Failed to parse generated KDL: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_kdl_span_lookup() {
+        let content = std::fs::read_to_string("/home/lsgalante/.config/cce/config.kdl").unwrap();
+        let val = cce_ui::config::parse_kdl_to_json(&content);
+        let mut flat = Vec::new();
+        flatten_json(&val, "", &mut flat);
+        
+        for (k, _) in &flat {
+            let tokens = parse_path(k);
+            let span = find_kdl_span(&content, &tokens);
+            assert!(span.is_some(), "Should find span for path: {} with tokens: {:?}", k, tokens);
         }
     }
 }
