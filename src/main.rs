@@ -4,7 +4,7 @@ use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, Win
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
     TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
-    MenuBar, StatusBar
+    KeybindRecorder, MenuBar, StatusBar
 };
 
 #[derive(Debug, Clone)]
@@ -261,8 +261,7 @@ struct DataEditorApp {
     selected_spinbox_editor: Spinbox,
     selected_font_editor: FontSelector,
     selected_choice_editor: Dropdown,
-    btn_apply_val: Button,
-    btn_delete_key: Button,
+    selected_keybind_editor: KeybindRecorder,
 
     // Right Panel Raw Json
     raw_json_editor: TextBox,
@@ -287,104 +286,7 @@ struct DataEditorApp {
     widgets_registered: bool,
 }
 
-fn value_to_kdl(key: &str, val: &serde_json::Value, indent: usize) -> String {
-    let indent_str = "    ".repeat(indent);
-    match val {
-        serde_json::Value::Object(map) => {
-            let has_objects = map.values().any(|v| v.is_object());
-            if has_objects {
-                let mut out = format!("{}{} {{\n", indent_str, key);
-                for (k, v) in map {
-                    out.push_str(&value_to_kdl(k, v, indent + 1));
-                }
-                out.push_str(&format!("{}}}\n", indent_str));
-                out
-            } else {
-                let mut prop_parts = Vec::new();
-                for (prop_name, prop_val) in map {
-                    let (val_str, val_ty) = match prop_val {
-                        serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
-                        serde_json::Value::Number(num) => {
-                            if num.is_f64() {
-                                (num.to_string(), Some("f64"))
-                            } else {
-                                (num.to_string(), Some("i64"))
-                            }
-                        }
-                        serde_json::Value::String(s) => {
-                            if s.starts_with('#') {
-                                let s_clean = s.trim_start_matches('#');
-                                let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
-                                (format!("\"{}\"", s), Some(ty))
-                            } else {
-                                (format!("\"{}\"", s), None)
-                            }
-                        }
-                        _ => (prop_val.to_string(), None),
-                    };
-                    if let Some(ty) = val_ty {
-                        prop_parts.push(format!("{}=({}){}", prop_name, ty, val_str));
-                    } else {
-                        prop_parts.push(format!("{}={}", prop_name, val_str));
-                    }
-                }
-                format!("{}{} {}\n", indent_str, key, prop_parts.join(" "))
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            let mut out = String::new();
-            for item in arr {
-                out.push_str(&value_to_kdl(key, item, indent));
-            }
-            out
-        }
-        _ => {
-            let (val_str, val_ty) = match val {
-                serde_json::Value::Bool(b) => (b.to_string(), Some("bool")),
-                serde_json::Value::Number(num) => {
-                    if num.is_f64() {
-                        (num.to_string(), Some("f64"))
-                    } else {
-                        (num.to_string(), Some("i64"))
-                    }
-                }
-                serde_json::Value::String(s) => {
-                    if s.starts_with('#') {
-                        let s_clean = s.trim_start_matches('#');
-                        let ty = if s_clean.len() == 8 { "rgba" } else { "rgb" };
-                        (format!("\"{}\"", s), Some(ty))
-                    } else {
-                        (format!("\"{}\"", s), None)
-                    }
-                }
-                _ => (val.to_string(), None),
-            };
-            if let Some(ty) = val_ty {
-                format!("{}{} ({}){}\n", indent_str, key, ty, val_str)
-            } else {
-                format!("{}{} {}\n", indent_str, key, val_str)
-            }
-        }
-    }
-}
 
-fn json_to_kdl_string(val: &serde_json::Value) -> String {
-    let mut out = String::new();
-    if let serde_json::Value::Object(map) = val {
-        for (sec_name, sec_val) in map {
-            if let serde_json::Value::Object(sec_map) = sec_val {
-                out.push_str(&format!("{} {{\n", sec_name));
-                for (k, v) in sec_map {
-                    out.push_str(&value_to_kdl(k, v, 1));
-                }
-                out.push_str("}\n");
-            } else {
-                out.push_str(&value_to_kdl(sec_name, sec_val, 0));
-            }
-        }
-    }
-    out
-}
 impl DataEditorApp {
 
     fn load_recent_files(&self) -> Vec<String> {
@@ -482,7 +384,7 @@ impl DataEditorApp {
 
     fn update_raw_from_flat(&mut self) {
         let root = unflatten_json(&self.flat_keys);
-        let pretty = json_to_kdl_string(&root);
+        let pretty = cce_ui::config::json_to_kdl_string(&root);
         self.raw_json_editor.text = pretty;
         self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
         self.raw_json_editor.sync_editor_state();
@@ -563,6 +465,7 @@ impl DataEditorApp {
         self.raw_json_editor.prepare_text(&mut self.font_system);
         self.selected_value_editor.prepare_text(&mut self.font_system);
         self.new_key_editor.prepare_text(&mut self.font_system);
+        self.selected_keybind_editor.prepare_text(&mut self.font_system);
         self.text_items.clear();
         let scale = cce_ui::scale::scale_factor();
         let mut labels = Vec::new();
@@ -575,8 +478,6 @@ impl DataEditorApp {
         labels.extend(self.btn_refresh.text_labels());
         labels.extend(self.btn_exit.text_labels());
         labels.extend(self.btn_add_key.text_labels());
-        labels.extend(self.btn_apply_val.text_labels());
-        labels.extend(self.btn_delete_key.text_labels());
 
         // 2. Section labels
         let bottom_y = bottom_y_calc(self.height);
@@ -690,6 +591,13 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
+        Self::add_element_labels(
+            &self.selected_keybind_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
 
         // 6. Build static text items
         for label in labels {
@@ -725,6 +633,10 @@ impl Application for DataEditorApp {
         Some(&self.ui_context)
     }
 
+    fn ui_context_mut(&mut self) -> Option<&mut cce_ui::context::UiContext> {
+        Some(&mut self.ui_context)
+    }
+
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
         let btn_save = Button::new(90.0, 8.0, 70.0, 26.0).with_label("Save");
         let btn_save_as = Button::new(170.0, 8.0, 80.0, 26.0).with_label("Save As");
@@ -742,8 +654,7 @@ impl Application for DataEditorApp {
         let selected_spinbox_editor = Spinbox::new(0, -1000000, 1000000, 1);
         let selected_font_editor = FontSelector::new(String::new());
         let selected_choice_editor = Dropdown::new(Vec::new(), 0);
-        let btn_apply_val = Button::new(10.0, 490.0, 100.0, 26.0).with_label("Apply");
-        let btn_delete_key = Button::new(120.0, 490.0, 100.0, 26.0).with_label("Delete");
+        let selected_keybind_editor = KeybindRecorder::new(String::new());
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -833,8 +744,7 @@ impl Application for DataEditorApp {
             selected_spinbox_editor,
             selected_font_editor,
             selected_choice_editor,
-            btn_apply_val,
-            btn_delete_key,
+            selected_keybind_editor,
             raw_json_editor,
             current_file_path,
             status_message: None,
@@ -1065,7 +975,24 @@ impl Application for DataEditorApp {
                     let val_str = if self.selected_value_editor.editing { &self.selected_value_editor.edit_buffer } else { &self.selected_value_editor.text };
                     let val_trimmed = val_str.trim();
                     match serde_json::from_str::<serde_json::Value>(val_trimmed) {
-                        Ok(parsed) => {
+                        Ok(mut parsed) => {
+                            if let Some(num_f) = parsed.as_f64() {
+                                if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, &self.flat_keys[idx].0) {
+                                    if annotation.starts_with("f64:") {
+                                        let range_str = annotation.trim_start_matches("f64:");
+                                        if let Some(dash_idx) = range_str.find('-') {
+                                            let min_str = &range_str[..dash_idx].trim();
+                                            let max_str = &range_str[dash_idx + 1..].trim();
+                                            if let (Ok(min_f), Ok(max_f)) = (min_str.parse::<f64>(), max_str.parse::<f64>()) {
+                                                let clamped = num_f.clamp(min_f, max_f);
+                                                if let Some(num) = serde_json::Number::from_f64(clamped) {
+                                                    parsed = serde_json::Value::Number(num);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             self.flat_keys[idx].1 = parsed;
                             self.update_raw_from_flat();
                             self.status_message = Some(("Value applied".to_string(), false));
@@ -1220,6 +1147,23 @@ impl Application for DataEditorApp {
                 self.needs_rebuild = true;
             }
         }
+        if self.selected_keybind_editor.tick(_dt, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.selected_keybind_editor.take_change() {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::String(self.selected_keybind_editor.value.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                self.selected_value_editor.editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
         if self.raw_json_editor.take_change() {
             let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
             if content.parse::<kdl::KdlDocument>().is_ok() {
@@ -1279,6 +1223,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), &mut (*self_ptr).selected_spinbox_editor as *mut Spinbox as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
 
@@ -1292,8 +1237,6 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.btn_refresh.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_exit.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_add_key.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_apply_val.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_delete_key.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.new_key_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
@@ -1301,6 +1244,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_font_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_choice_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_keybind_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
@@ -1318,6 +1262,7 @@ impl Application for DataEditorApp {
             self.width = size.width as u32;
             self.height = size.height as u32;
             self.scale_factor = scale;
+            cce_ui::scale::set_scale_factor(scale as f32);
             
             self.root_window.set_rect(0.0, 0.0, self.width as f32, self.height as f32);
             
@@ -1337,9 +1282,6 @@ impl Application for DataEditorApp {
             let bottom_y = bottom_y_calc(self.height);
             self.new_key_editor.set_rect(10.0, bottom_y + 10.0, 260.0, 26.0);
             self.btn_add_key.set_rect(280.0, bottom_y + 10.0, 100.0, 26.0);
-            
-            self.btn_apply_val.set_rect(10.0, bottom_y + 70.0, 100.0, 26.0);
-            self.btn_delete_key.set_rect(120.0, bottom_y + 70.0, 100.0, 26.0);
 
             // Position tree_list
             let list_top = 52.0;
@@ -1381,19 +1323,45 @@ impl Application for DataEditorApp {
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     } else {
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        if let serde_json::Value::String(s) = val {
-                            if s.starts_with('#') {
-                                self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            } else if is_font_type {
-                                self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
+                        if is_keybind_type {
+                            let val_str = match val {
+                                serde_json::Value::String(st) => st.clone(),
+                                _ => String::new(),
+                            };
+                            self.selected_keybind_editor.value = val_str;
+                            self.selected_keybind_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                            self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        } else {
+                            self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            if let serde_json::Value::String(s) = val {
+                                if s.starts_with('#') {
+                                    self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                } else if is_font_type {
+                                    self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                } else {
+                                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                    self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                }
+                            } else if val.is_i64() {
+                                self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else {
                                 self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
@@ -1401,16 +1369,6 @@ impl Application for DataEditorApp {
                                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             }
-                        } else if val.is_i64() {
-                            self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                            self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        } else {
-                            self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
-                            self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                            self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         }
                     }
                 } else {
@@ -1512,8 +1470,6 @@ impl Application for DataEditorApp {
             if self.btn_refresh.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_apply_val.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_delete_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             
             if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1521,6 +1477,7 @@ impl Application for DataEditorApp {
             if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_keybind_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
             if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1543,9 +1500,18 @@ impl Application for DataEditorApp {
             if cce_ui::widget::context_menu::mouse_input(button, state, px, py) {
                 changed = true;
             }
-            if changed {
+            if let Some(_deleted_path) = self.tree_list.take_deleted_key_path() {
+                if let Some(idx) = self.tree_list.selected_key_idx {
+                    self.selected_key_idx = Some(idx);
+                }
+                msg_out = Some(AppMessage::DeleteKey);
+            }
+            if changed || msg_out.is_some() {
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
+            }
+            if msg_out.is_some() {
+                return msg_out;
             }
             return None;
         }
@@ -1603,18 +1569,6 @@ impl Application for DataEditorApp {
                 msg_out = Some(AppMessage::AddKey);
             }
         }
-        if self.btn_apply_val.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_apply_val.take_click() {
-                msg_out = Some(AppMessage::ApplyValue);
-            }
-        }
-        if self.btn_delete_key.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_delete_key.take_click() {
-                msg_out = Some(AppMessage::DeleteKey);
-            }
-        }
 
         let mut editor_handled = false;
         if self.new_key_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
@@ -1638,6 +1592,10 @@ impl Application for DataEditorApp {
             editor_handled = true;
         }
         if self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            editor_handled = true;
+        }
+        if self.selected_keybind_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
         }
@@ -1702,8 +1660,15 @@ impl Application for DataEditorApp {
                             self.selected_spinbox_editor.value = num as i32;
                         }
                         
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
+
                         if is_menu_type {
                             self.ui_context.set_focused(&mut self.selected_choice_editor);
+                        } else if is_keybind_type {
+                            if let serde_json::Value::String(s) = val {
+                                self.selected_keybind_editor.value = s.clone();
+                            }
+                            self.ui_context.set_focused(&mut self.selected_keybind_editor);
                         } else if let serde_json::Value::String(s) = val {
                             if s.starts_with('#') {
                                 self.ui_context.set_focused(&mut self.selected_color_editor);
@@ -1738,6 +1703,7 @@ impl Application for DataEditorApp {
                 self.selected_spinbox_editor.unfocus();
                 self.selected_font_editor.unfocus();
                 self.selected_choice_editor.unfocus();
+                self.selected_keybind_editor.unfocus();
                 self.tree_list.unfocus();
                 changed = true;
             }
@@ -1782,6 +1748,8 @@ impl Application for DataEditorApp {
 
     fn handle_key_input(&mut self, event: &KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         self.ctrl_pressed = event.ctrl;
+        self.ui_context.ctrl_pressed = event.ctrl;
+        self.ui_context.shift_pressed = event.shift;
 
         if event.state == ElementState::Pressed && cce_ui::widget::context_menu::is_visible() {
             cce_ui::widget::context_menu::hide();
@@ -1866,6 +1834,7 @@ impl Application for DataEditorApp {
             if self.selected_spinbox_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_font_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_choice_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
+            if self.selected_keybind_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.new_key_editor.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
                 if event.state == ElementState::Pressed && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter) {
@@ -1927,6 +1896,9 @@ mod tests {
         let val = cce_ui::config::parse_kdl_to_json(&content);
         let mut flat = Vec::new();
         flatten_json(&val, "", &mut flat);
+        for (k, v) in &flat {
+            println!("FLAT KEY: {:?} = {:?}", k, v);
+        }
         
         let mut found = false;
         for (k, v) in &mut flat {
@@ -1938,7 +1910,7 @@ mod tests {
         assert!(found, "Should find style.status.background_color!");
 
         let root = unflatten_json(&flat);
-        let new_kdl = json_to_kdl_string(&root);
+        let new_kdl = cce_ui::config::json_to_kdl_string(&root);
         println!("Generated KDL:\n{}", new_kdl);
         match new_kdl.parse::<kdl::KdlDocument>() {
             Ok(_) => println!("Parsed OK!"),
