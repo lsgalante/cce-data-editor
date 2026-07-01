@@ -412,6 +412,12 @@ impl DataEditorApp {
 
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
+        let mut annotations = Vec::new();
+        for (key_path, _) in &self.flat_keys {
+            let anno = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_path);
+            annotations.push(anno);
+        }
+        self.tree_list.annotations = annotations;
         self.tree_list.set_flat_keys(self.flat_keys.clone());
     }
 
