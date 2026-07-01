@@ -3,7 +3,8 @@ use glyphon::{FontSystem, Buffer, Metrics, Attrs};
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
-    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown
+    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
+    MenuBar, StatusBar
 };
 
 #[derive(Debug, Clone)]
@@ -243,6 +244,8 @@ struct DataEditorApp {
 
     // UI state
     root_window: Backplate,
+    menubar: MenuBar,
+    statusbar: StatusBar,
     width: u32,
     height: u32,
     scale_factor: f64,
@@ -503,25 +506,25 @@ impl DataEditorApp {
 
         // 4. Status Bar indicators
         if let Some((msg, is_error)) = &self.status_message {
-            let color = if *is_error { [0xfa, 0x52, 0x52] } else { [0x40, 0xc0, 0x57] };
-            labels.push(TextLabel {
-                text: msg.clone(),
-                x: (self.width as f32 - 400.0).max(300.0),
-                y: self.height as f32 - 20.0,
-                font_size: 11.0,
-                color,
-            });
+            let color = if *is_error { [0.98, 0.32, 0.32, 1.0] } else { [0.25, 0.75, 0.34, 1.0] };
+            self.statusbar.set_text(msg);
+            self.statusbar.set_text_color(color);
         } else {
-            labels.push(TextLabel {
-                text: format!("Keys: {} | Selected Index: {:?}", self.flat_keys.len(), self.selected_key_idx),
-                x: 15.0,
-                y: self.height as f32 - 20.0,
-                font_size: 11.0,
-                color: [0x83, 0x83, 0x8a],
-            });
+            let msg = format!("Keys: {} | Selected Index: {:?}", self.flat_keys.len(), self.selected_key_idx);
+            self.statusbar.set_text(&msg);
+            self.statusbar.set_text_color([0.51, 0.51, 0.54, 1.0]);
         }
+        self.statusbar.prepare_text(&mut self.font_system);
+        self.menubar.prepare_text(&mut self.font_system);
 
         // 5. Add Textbox / Element contents to text_items
+        Self::add_element_labels(
+            &self.statusbar,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
         Self::add_element_labels(
             &self.raw_json_editor,
             &self.ui_context,
@@ -654,11 +657,18 @@ impl Application for DataEditorApp {
         let mut tree_list = TreeList::new();
         tree_list.set_flat_keys(flat_keys.clone());
 
+        let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_color([0.08, 0.08, 0.12, 1.0]);
+        let statusbar = StatusBar::new()
+            .with_bg_color([0.08, 0.08, 0.10, 1.0])
+            .with_text_offset_x(15.0);
+
         let root_window = Backplate::new(0.0, 0.0, 800.0, 600.0)
             .with_movable(true);
 
         Self {
             root_window,
+            menubar,
+            statusbar,
             btn_open,
             btn_save,
             btn_save_as,
@@ -1135,7 +1145,12 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), &mut (*self_ptr).selected_spinbox_editor as *mut Spinbox as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
-                
+                self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
+
+                self.root_window.add_child(self.menubar.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
+
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_save.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_save_as.as_ptr_mut(), &mut self.ui_context);
@@ -1171,6 +1186,10 @@ impl Application for DataEditorApp {
             self.scale_factor = scale;
             
             self.root_window.set_rect(0.0, 0.0, self.width as f32, self.height as f32);
+            
+            let status_y = self.height as f32 - 30.0;
+            self.menubar.set_rect(0.0, 0.0, self.width as f32, 42.0);
+            self.statusbar.set_rect(0.0, status_y, self.width as f32, 30.0);
             
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
@@ -1286,12 +1305,10 @@ impl Application for DataEditorApp {
         }
 
         // 2. Toolbar Header
-        quads.push((0.0, 0.0, self.width as f32, 42.0, [0.08, 0.08, 0.12, 1.0]));
         quads.push((0.0, 42.0, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
 
         // 3. Status Bar
         let status_y = self.height as f32 - 30.0;
-        quads.push((0.0, status_y, self.width as f32, 30.0, [0.08, 0.08, 0.10, 1.0]));
         quads.push((0.0, status_y, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
 
         // 5. Collect all quads recursively from Backplate
