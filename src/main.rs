@@ -4,7 +4,7 @@ use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, Win
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
     TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
-    KeybindRecorder, MenuBar, StatusBar
+    KeybindRecorder, MenuBar, StatusBar, Checkbox
 };
 
 #[derive(Debug, Clone)]
@@ -262,6 +262,7 @@ struct DataEditorApp {
     selected_font_editor: FontSelector,
     selected_choice_editor: Dropdown,
     selected_keybind_editor: KeybindRecorder,
+    selected_bool_editor: Checkbox,
 
     // Right Panel Raw Json
     raw_json_editor: TextBox,
@@ -598,6 +599,13 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
+        Self::add_element_labels(
+            &self.selected_bool_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
 
         // 6. Build static text items
         for label in labels {
@@ -655,6 +663,7 @@ impl Application for DataEditorApp {
         let selected_font_editor = FontSelector::new(String::new());
         let selected_choice_editor = Dropdown::new(Vec::new(), 0);
         let selected_keybind_editor = KeybindRecorder::new(String::new());
+        let selected_bool_editor = Checkbox::new();
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -745,6 +754,7 @@ impl Application for DataEditorApp {
             selected_font_editor,
             selected_choice_editor,
             selected_keybind_editor,
+            selected_bool_editor,
             raw_json_editor,
             current_file_path,
             status_message: None,
@@ -1079,6 +1089,19 @@ impl Application for DataEditorApp {
             let mut exit = false;
             self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
         }
+        if self.selected_bool_editor.take_change() {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::Bool(self.selected_bool_editor.checked());
+                self.flat_keys[idx].1 = new_val;
+                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                self.selected_value_editor.editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
         if self.selected_color_editor.take_change() {
             if let Some(idx) = self.selected_key_idx {
                 let hex_str = self.selected_color_editor.get_value_string().unwrap_or_else(|| format_hex_color(self.selected_color_editor.color));
@@ -1192,6 +1215,8 @@ impl Application for DataEditorApp {
                             }
                         } else if let Some(num) = val.as_i64() {
                             self.selected_spinbox_editor.value = num as i32;
+                        } else if let serde_json::Value::Bool(b) = val {
+                            self.selected_bool_editor.set_checked(*b);
                         }
                     } else {
                         self.selected_value_editor.text.clear();
@@ -1224,6 +1249,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), &mut (*self_ptr).selected_bool_editor as *mut Checkbox as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
 
@@ -1245,6 +1271,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.selected_font_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_choice_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_keybind_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_bool_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
@@ -1324,6 +1351,7 @@ impl Application for DataEditorApp {
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     } else {
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1338,10 +1366,12 @@ impl Application for DataEditorApp {
                             self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         } else {
                             self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             if let serde_json::Value::String(s) = val {
+                                self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 if s.starts_with('#') {
                                     self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1359,11 +1389,19 @@ impl Application for DataEditorApp {
                                     self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 }
                             } else if val.is_i64() {
+                                self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                            } else if val.is_boolean() {
+                                self.selected_bool_editor.set_rect(row_x + 245.0, row_y + 1.0, 26.0, 26.0);
+                                self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                                self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else {
+                                self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1377,6 +1415,8 @@ impl Application for DataEditorApp {
                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1384,6 +1424,8 @@ impl Application for DataEditorApp {
                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
             // Right pane raw editor
@@ -1658,6 +1700,8 @@ impl Application for DataEditorApp {
                             }
                         } else if let Some(num) = val.as_i64() {
                             self.selected_spinbox_editor.value = num as i32;
+                        } else if let serde_json::Value::Bool(b) = val {
+                            self.selected_bool_editor.set_checked(*b);
                         }
                         
                         let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
@@ -1680,6 +1724,8 @@ impl Application for DataEditorApp {
                             }
                         } else if val.is_i64() {
                             self.ui_context.set_focused(&mut self.selected_spinbox_editor);
+                        } else if val.is_boolean() {
+                            self.ui_context.set_focused(&mut self.selected_bool_editor);
                         } else {
                             self.ui_context.set_focused(&mut self.selected_value_editor);
                             TextBox::focus(&mut self.selected_value_editor);
