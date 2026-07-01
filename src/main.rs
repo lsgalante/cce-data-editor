@@ -11,6 +11,7 @@ use cce_ui::widget::{
 enum AppMessage {
     Exit,
     OpenDocument,
+    OpenRecent(std::path::PathBuf),
     SaveDocument,
     SaveDocumentAs,
     FormatJson,
@@ -210,7 +211,7 @@ fn bottom_y_calc(height: u32) -> f32 {
 
 struct DataEditorApp {
     // Toolbar Buttons
-    btn_open: Button,
+    btn_open: Dropdown,
     btn_save: Button,
     btn_save_as: Button,
     btn_format: Button,
@@ -356,8 +357,84 @@ fn json_to_kdl_string(val: &serde_json::Value) -> String {
     }
     out
 }
-
 impl DataEditorApp {
+
+    fn load_recent_files(&self) -> Vec<String> {
+        let path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(&content) {
+                    return list.into_iter().filter(|p| std::path::Path::new(p).exists()).collect();
+                }
+            }
+        }
+        Vec::new()
+    }
+
+    fn save_recent_files(&self, files: &[String]) {
+        let path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Ok(content) = serde_json::to_string(files) {
+            let _ = std::fs::write(path, content);
+        }
+    }
+
+    fn add_recent_file(&mut self, file_path: &std::path::Path) {
+        if let Ok(abs_path) = std::fs::canonicalize(file_path) {
+            let abs_str = abs_path.to_string_lossy().to_string();
+            let mut recent = self.load_recent_files();
+            recent.retain(|p| p != &abs_str);
+            recent.insert(0, abs_str);
+            if recent.len() > 10 {
+                recent.truncate(10);
+            }
+            self.save_recent_files(&recent);
+            self.update_recent_files_dropdown(recent);
+        }
+    }
+
+    fn update_recent_files_dropdown(&mut self, recent: Vec<String>) {
+        let mut options = recent;
+        options.push("Other".to_string());
+        self.btn_open.options = options;
+        self.btn_open.selected = 0;
+        self.needs_rebuild = true;
+    }
+
+    fn open_file_by_path(&mut self, path: std::path::PathBuf) -> Result<(), String> {
+        match std::fs::read_to_string(&path) {
+            Ok(content) => {
+                self.raw_json_editor.text = content;
+                self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
+                self.raw_json_editor.cursor_idx = 0;
+                self.raw_json_editor.select_anchor = None;
+                self.raw_json_editor.editing = false;
+                
+                self.flat_keys.clear();
+                if self.raw_json_editor.text.parse::<kdl::KdlDocument>().is_ok() {
+                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
+                    flatten_json(&val, "", &mut self.flat_keys);
+                    self.status_message = Some((format!("Opened {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                } else {
+                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
+                    flatten_json(&val, "", &mut self.flat_keys);
+                    self.status_message = Some(("Loaded, but KDL is syntactically invalid".to_string(), true));
+                }
+                
+                self.selected_key_idx = None;
+                self.tree_list.scroll_box.scroll_y = 0.0;
+                self.current_file_path = Some(path.clone());
+                self.sync_preview_selection();
+                self.add_recent_file(&path);
+                Ok(())
+            }
+            Err(e) => {
+                Err(format!("Error opening: {}", e))
+            }
+        }
+    }
 
     fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
         println!("[DEBUG] pick_file_to_open: Executing XDG desktop portal file chooser");
@@ -610,7 +687,6 @@ impl Application for DataEditorApp {
     }
 
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
-        let btn_open = Button::new(10.0, 8.0, 70.0, 26.0).with_label("Open");
         let btn_save = Button::new(90.0, 8.0, 70.0, 26.0).with_label("Save");
         let btn_save_as = Button::new(170.0, 8.0, 80.0, 26.0).with_label("Save As");
         let btn_format = Button::new(260.0, 8.0, 80.0, 26.0).with_label("Format");
@@ -653,6 +729,39 @@ impl Application for DataEditorApp {
                 }
             }
         }
+
+        // Load recent files list
+        let mut recent = Vec::new();
+        let recent_path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
+        if recent_path.exists() {
+            if let Ok(content) = std::fs::read_to_string(recent_path) {
+                if let Ok(list) = serde_json::from_str::<Vec<String>>(&content) {
+                    recent = list.into_iter().filter(|p| std::path::Path::new(p).exists()).collect();
+                }
+            }
+        }
+
+        if let Some(ref path) = current_file_path {
+            if let Ok(abs_path) = std::fs::canonicalize(path) {
+                let abs_str = abs_path.to_string_lossy().to_string();
+                recent.retain(|p| p != &abs_str);
+                recent.insert(0, abs_str);
+                if recent.len() > 10 {
+                    recent.truncate(10);
+                }
+                if let Some(parent) = recent_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Ok(content) = serde_json::to_string(&recent) {
+                    let _ = std::fs::write(recent_path, content);
+                }
+            }
+        }
+
+        let mut dropdown_options = recent;
+        dropdown_options.push("Other".to_string());
+        let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("Open");
+        btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
         let mut tree_list = TreeList::new();
         tree_list.set_flat_keys(flat_keys.clone());
@@ -728,33 +837,8 @@ impl Application for DataEditorApp {
                 match self.pick_file_to_open() {
                     Ok(path) => {
                         println!("[DEBUG] pick_file_to_open succeeded, path = {:?}", path);
-                        match std::fs::read_to_string(&path) {
-                            Ok(content) => {
-                                self.raw_json_editor.text = content;
-                                self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
-                                self.raw_json_editor.cursor_idx = 0;
-                                self.raw_json_editor.select_anchor = None;
-                                self.raw_json_editor.editing = false;
-                                
-                                self.flat_keys.clear();
-                                if self.raw_json_editor.text.parse::<kdl::KdlDocument>().is_ok() {
-                                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
-                                    flatten_json(&val, "", &mut self.flat_keys);
-                                    self.status_message = Some((format!("Opened {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
-                                } else {
-                                    let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
-                                    flatten_json(&val, "", &mut self.flat_keys);
-                                    self.status_message = Some(("Loaded, but KDL is syntactically invalid".to_string(), true));
-                                }
-                                
-                                self.selected_key_idx = None;
-                                self.tree_list.scroll_box.scroll_y = 0.0;
-                                self.current_file_path = Some(path);
-                                self.sync_preview_selection();
-                            }
-                            Err(e) => {
-                                self.status_message = Some((format!("Error opening: {}", e), true));
-                            }
+                        if let Err(e) = self.open_file_by_path(path) {
+                            self.status_message = Some((e, true));
                         }
                         *needs_rebuild = true;
                         self.needs_rebuild = true;
@@ -769,6 +853,14 @@ impl Application for DataEditorApp {
                     }
                 }
             }
+            AppMessage::OpenRecent(path) => {
+                println!("[DEBUG] update: AppMessage::OpenRecent received, path = {:?}", path);
+                if let Err(e) = self.open_file_by_path(path) {
+                    self.status_message = Some((e, true));
+                }
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
             AppMessage::SaveDocument => {
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
                 if let Err(e) = content.parse::<kdl::KdlDocument>() {
@@ -778,13 +870,14 @@ impl Application for DataEditorApp {
                     return;
                 }
                 
-                if let Some(ref path) = self.current_file_path {
-                    match std::fs::write(path, content) {
+                if let Some(path) = self.current_file_path.clone() {
+                    match std::fs::write(&path, content) {
                         Ok(_) => {
                             if self.raw_json_editor.editing {
                                 self.raw_json_editor.text = self.raw_json_editor.edit_buffer.clone();
                             }
                             self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                            self.add_recent_file(&path);
                         }
                         Err(e) => {
                             self.status_message = Some((format!("Save failed: {}", e), true));
@@ -814,6 +907,7 @@ impl Application for DataEditorApp {
                                 }
                                 self.current_file_path = Some(path.clone());
                                 self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                                self.add_recent_file(&path);
                             }
                             Err(e) => {
                                 self.status_message = Some((format!("Save failed: {}", e), true));
@@ -1140,6 +1234,7 @@ impl Application for DataEditorApp {
             let self_ptr = self as *mut Self;
             unsafe {
                 self.ui_context.register_widget(self.root_window.base().unwrap().id(), &mut (*self_ptr).root_window as *mut Backplate as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), &mut (*self_ptr).btn_open as *mut Dropdown as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), &mut (*self_ptr).selected_spinbox_editor as *mut Spinbox as *mut (dyn Element + 'static));
@@ -1321,6 +1416,10 @@ impl Application for DataEditorApp {
             self.ui_context.register_popover(&self.selected_choice_editor);
             cce_ui::widget::popovers::register(&self.selected_choice_editor);
         }
+        if self.btn_open.popover_rect().is_some() {
+            self.ui_context.register_popover(&self.btn_open);
+            cce_ui::widget::popovers::register(&self.btn_open);
+        }
     }
 
     fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: LogicalSize, scale: f64) {
@@ -1382,9 +1481,19 @@ impl Application for DataEditorApp {
 
         if self.btn_open.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
-            if state == ElementState::Released && self.btn_open.take_click() {
-                println!("[DEBUG] btn_open click registered! Dispatching OpenDocument");
-                msg_out = Some(AppMessage::OpenDocument);
+            if self.btn_open.take_change() {
+                let selected_idx = self.btn_open.selected;
+                if selected_idx < self.btn_open.options.len() {
+                    let option_text = &self.btn_open.options[selected_idx];
+                    if option_text == "Other" {
+                        println!("[DEBUG] Dropdown selected 'Other', Dispatching OpenDocument");
+                        msg_out = Some(AppMessage::OpenDocument);
+                    } else {
+                        let path = std::path::PathBuf::from(option_text);
+                        println!("[DEBUG] Dropdown selected recent file: {:?}", path);
+                        msg_out = Some(AppMessage::OpenRecent(path));
+                    }
+                }
             }
         }
         if self.btn_save.mouse_input(button, state, px, py, &mut self.ui_context) {
@@ -1650,6 +1759,20 @@ impl Application for DataEditorApp {
         }
 
         if !handled {
+            if self.btn_open.keyboard_input(event, &mut self.ui_context) {
+                handled = true;
+                if self.btn_open.take_change() {
+                    let selected_idx = self.btn_open.selected;
+                    if selected_idx < self.btn_open.options.len() {
+                        let option_text = &self.btn_open.options[selected_idx];
+                        if option_text == "Other" {
+                            msg_out = Some(AppMessage::OpenDocument);
+                        } else {
+                            msg_out = Some(AppMessage::OpenRecent(std::path::PathBuf::from(option_text)));
+                        }
+                    }
+                }
+            }
             if self.raw_json_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_value_editor.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
