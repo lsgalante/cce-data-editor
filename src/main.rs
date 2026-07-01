@@ -413,8 +413,9 @@ impl DataEditorApp {
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
         let mut annotations = Vec::new();
+        let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
         for (key_path, _) in &self.flat_keys {
-            let anno = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_path);
+            let anno = cce_ui::config::get_kdl_type_annotation(content, key_path);
             annotations.push(anno);
         }
         self.tree_list.annotations = annotations;
@@ -729,6 +730,12 @@ impl Application for DataEditorApp {
         btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
         let mut tree_list = TreeList::new();
+        let mut annotations = Vec::new();
+        for (key_path, _) in &flat_keys {
+            let anno = cce_ui::config::get_kdl_type_annotation(&raw_json_editor.text, key_path);
+            annotations.push(anno);
+        }
+        tree_list.annotations = annotations;
         tree_list.set_flat_keys(flat_keys.clone());
 
         let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_color([0.08, 0.08, 0.12, 1.0]);
