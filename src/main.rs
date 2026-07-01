@@ -385,7 +385,14 @@ impl DataEditorApp {
 
     fn update_raw_from_flat(&mut self) {
         let root = unflatten_json(&self.flat_keys);
-        let pretty = cce_ui::config::json_to_kdl_string(&root);
+        let mut anno_map = std::collections::HashMap::new();
+        let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
+        for (key_path, _) in &self.flat_keys {
+            if let Some(anno) = cce_ui::config::get_kdl_type_annotation(content, key_path) {
+                anno_map.insert(key_path.clone(), anno);
+            }
+        }
+        let pretty = cce_ui::config::json_to_kdl_string_with_annotations(&root, &anno_map);
         self.raw_json_editor.text = pretty;
         self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
         self.raw_json_editor.sync_editor_state();
