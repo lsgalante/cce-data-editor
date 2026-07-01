@@ -504,13 +504,23 @@ impl DataEditorApp {
         scale: f32,
     ) {
         for (label, font_family, bounds) in element.text_labels_with_font_and_bounds(ui_context) {
-            let physical_size = label.font_size * scale;
+            let mut font_size = label.font_size;
+            let mut family_name = None;
+            if let Some(ref font_str) = font_family {
+                let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
+                if let Some(ps) = parsed_size {
+                    font_size = ps;
+                }
+                family_name = Some(parsed_family);
+            }
+
+            let physical_size = font_size * scale;
             let metrics = Metrics::new(physical_size, physical_size * 1.4);
             let mut buf = Buffer::new(font_system, metrics);
             let mut attrs = Attrs::new();
             
             // Keep family_str alive for the whole iteration so Family::Name(&family) borrow is valid
-            let family_str = font_family.clone();
+            let family_str = family_name.clone();
             if let Some(ref family) = family_str {
                 let family_val = match family.as_str() {
                     "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
