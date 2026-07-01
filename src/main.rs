@@ -470,6 +470,7 @@ impl DataEditorApp {
                     self.raw_json_editor.select_anchor = Some(start);
                     self.raw_json_editor.cursor_idx = end;
                     self.raw_json_editor.sync_editor_state();
+                    self.raw_json_editor.scroll_to_cursor();
                     return;
                 }
             }
@@ -1732,6 +1733,10 @@ impl Application for DataEditorApp {
             self.needs_rebuild = true;
         }
         if self.selected_choice_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if self.raw_json_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
