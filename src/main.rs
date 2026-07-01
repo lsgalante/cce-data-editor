@@ -79,15 +79,31 @@ fn find_kdl_span_in_doc(doc: &kdl::KdlDocument, tokens: &[PathToken]) -> Option<
 
             let nodes: Vec<&kdl::KdlNode> = doc.nodes().iter().filter(|n| n.name().value() == target_key).collect();
             if let Some(idx) = target_idx {
-                let node = nodes.get(idx)?;
-                if tokens.len() == 2 {
-                    let span = node.span();
-                    return Some((span.offset(), span.offset() + span.len()));
+                let node = nodes.first()?;
+                if let Some(children) = node.children() {
+                    let child_node = children.nodes().get(idx)?;
+                    if tokens.len() == 2 {
+                        let span = child_node.span();
+                        return Some((span.offset(), span.offset() + span.len()));
+                    } else if tokens.len() == 3 {
+                        if let PathToken::Key(prop_key) = &tokens[2] {
+                            if let Some(entry) = child_node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
+                                let span = entry.span();
+                                return Some((span.offset(), span.offset() + span.len()));
+                            }
+                        }
+                    }
                 } else {
-                    if let PathToken::Key(prop_key) = &tokens[2] {
-                        if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
-                            let span = entry.span();
-                            return Some((span.offset(), span.offset() + span.len()));
+                    let node = nodes.get(idx)?;
+                    if tokens.len() == 2 {
+                        let span = node.span();
+                        return Some((span.offset(), span.offset() + span.len()));
+                    } else {
+                        if let PathToken::Key(prop_key) = &tokens[2] {
+                            if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
+                                let span = entry.span();
+                                return Some((span.offset(), span.offset() + span.len()));
+                            }
                         }
                     }
                 }
