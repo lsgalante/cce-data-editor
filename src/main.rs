@@ -676,23 +676,6 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
-
-        if cce_ui::widget::context_menu::is_visible() {
-            for label in cce_ui::widget::context_menu::text_labels() {
-                let physical_size = label.font_size * scale;
-                let metrics = Metrics::new(physical_size, physical_size * 1.4);
-                let mut buf = Buffer::new(&mut self.font_system, metrics);
-                buf.set_text(&mut self.font_system, &label.text, Attrs::new(), glyphon::Shaping::Advanced);
-                buf.shape_until_scroll(&mut self.font_system, true);
-                self.text_items.push(TextItem {
-                    buffer: buf,
-                    x: label.x,
-                    y: label.y,
-                    color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
-                    bounds: None,
-                });
-            }
-        }
     }
 }
 
@@ -1426,10 +1409,6 @@ impl Application for DataEditorApp {
         // 5. Collect all quads recursively from Backplate
         quads.extend(self.root_window.all_quads(&self.ui_context));
 
-        if cce_ui::widget::context_menu::is_visible() {
-            quads.extend(cce_ui::widget::context_menu::extra_quads());
-        }
-
         // 6. Popovers registration (since this app bypasses the layout engine)
         self.ui_context.clear_popovers();
         cce_ui::widget::popovers::clear();
@@ -1460,6 +1439,21 @@ impl Application for DataEditorApp {
 
     fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
         cce_ui::layout::render_popovers(pc, &self.ui_context);
+
+        if cce_ui::widget::context_menu::is_visible() {
+            for (qx, qy, qw, qh, qc) in cce_ui::widget::context_menu::extra_quads() {
+                pc.rect(qc, qx, qy, qw, qh);
+            }
+            for label in cce_ui::widget::context_menu::text_labels() {
+                let color_f32 = [
+                    label.color[0] as f32 / 255.0,
+                    label.color[1] as f32 / 255.0,
+                    label.color[2] as f32 / 255.0,
+                    1.0,
+                ];
+                pc.text(&label.text, label.x, label.y, label.font_size, color_f32);
+            }
+        }
     }
 
     fn handle_pointer_move(&mut self, pos: LogicalPosition, needs_rebuild: &mut bool) {
