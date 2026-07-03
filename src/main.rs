@@ -1899,6 +1899,8 @@ impl Application for DataEditorApp {
         if !handled {
             if self.tree_list.search_box.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
             }
         }
         if !handled {
