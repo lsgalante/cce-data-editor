@@ -287,25 +287,11 @@ struct DataEditorApp {
 impl DataEditorApp {
 
     fn load_recent_files(&self) -> Vec<String> {
-        let path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                if let Ok(list) = serde_json::from_str::<Vec<String>>(&content) {
-                    return list.into_iter().filter(|p| std::path::Path::new(p).exists()).collect();
-                }
-            }
-        }
-        Vec::new()
+        cce_ui::config::load_recent_files()
     }
 
     fn save_recent_files(&self, files: &[String]) {
-        let path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        if let Ok(content) = serde_json::to_string(files) {
-            let _ = std::fs::write(path, content);
-        }
+        cce_ui::config::save_recent_files(files)
     }
 
     fn add_recent_file(&mut self, file_path: &std::path::Path) {
@@ -724,15 +710,7 @@ impl Application for DataEditorApp {
         }
 
         // Load recent files list
-        let mut recent = Vec::new();
-        let recent_path = std::path::Path::new("/home/lsgalante/.config/cce/recent_files.json");
-        if recent_path.exists() {
-            if let Ok(content) = std::fs::read_to_string(recent_path) {
-                if let Ok(list) = serde_json::from_str::<Vec<String>>(&content) {
-                    recent = list.into_iter().filter(|p| std::path::Path::new(p).exists()).collect();
-                }
-            }
-        }
+        let mut recent = cce_ui::config::load_recent_files();
 
         if let Some(ref path) = current_file_path {
             if let Ok(abs_path) = std::fs::canonicalize(path) {
@@ -742,12 +720,7 @@ impl Application for DataEditorApp {
                 if recent.len() > 10 {
                     recent.truncate(10);
                 }
-                if let Some(parent) = recent_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Ok(content) = serde_json::to_string(&recent) {
-                    let _ = std::fs::write(recent_path, content);
-                }
+                cce_ui::config::save_recent_files(&recent);
             }
         }
 
