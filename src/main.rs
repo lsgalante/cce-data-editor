@@ -505,24 +505,7 @@ impl DataEditorApp {
             color: [0x83, 0x83, 0x8a],
         });
 
-        let selected_key_name = match self.selected_key_idx {
-            Some(idx) => {
-                let k = &self.flat_keys[idx].0;
-                if k.len() > 30 {
-                    format!("Edit Key: ...{}", &k[k.len() - 27..])
-                } else {
-                    format!("Edit Key: {}", k)
-                }
-            }
-            None => "No Key Selected".to_string(),
-        };
-        labels.push(TextLabel {
-            text: selected_key_name,
-            x: 10.0,
-            y: bottom_y + 54.0,
-            font_size: 11.0,
-            color: [0x83, 0x83, 0x8a],
-        });
+
 
         // 3. File path info in toolbar
         let file_name_str = match &self.current_file_path {
