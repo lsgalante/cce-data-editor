@@ -1394,7 +1394,7 @@ impl Application for DataEditorApp {
                             is_menu_type = true;
                             let opts_str = annotation.trim_start_matches("menu:");
                             menu_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
-                        } else if annotation == "button" {
+                        } else if annotation == "button" || annotation.starts_with("button:") {
                             is_button_type = true;
                         }
                     }
@@ -1733,28 +1733,37 @@ impl Application for DataEditorApp {
             if state == ElementState::Released && self.selected_button_editor.take_click() {
                 if let Some(idx) = self.selected_key_idx {
                     let key_name = &self.flat_keys[idx].0;
-                    if key_name == "notifications.test_notification" {
-                        println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
-                        std::process::Command::new("busctl")
-                            .args([
-                                "--user",
-                                "call",
-                                "org.freedesktop.Notifications",
-                                "/org/freedesktop/Notifications",
-                                "org.freedesktop.Notifications",
-                                "Notify",
-                                "susssasa{sv}i",
-                                "cce-client",
-                                "0",
-                                "",
-                                "CCE Test Notification",
-                                "This is a test notification from the Data Editor.",
-                                "0",
-                                "0",
-                                "-1",
-                            ])
-                            .spawn()
-                            .ok();
+                    if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
+                        if annotation.starts_with("button:") {
+                            let cmd = annotation.trim_start_matches("button:");
+                            println!("[DEBUG] Visual button clicked, running command: {}", cmd);
+                            std::process::Command::new("sh")
+                                .args(["-c", cmd])
+                                .spawn()
+                                .ok();
+                        } else if key_name == "notifications.test_notification" {
+                            println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
+                            std::process::Command::new("busctl")
+                                .args([
+                                    "--user",
+                                    "call",
+                                    "org.freedesktop.Notifications",
+                                    "/org/freedesktop/Notifications",
+                                    "org.freedesktop.Notifications",
+                                    "Notify",
+                                    "susssasa{sv}i",
+                                    "cce-client",
+                                    "0",
+                                    "",
+                                    "CCE Test Notification",
+                                    "This is a test notification from the Data Editor.",
+                                    "0",
+                                    "0",
+                                    "-1",
+                                ])
+                                .spawn()
+                                .ok();
+                        }
                     }
                 }
             }
