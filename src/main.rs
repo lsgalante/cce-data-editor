@@ -1855,7 +1855,11 @@ impl Application for DataEditorApp {
                         handled = true;
                     }
                     "f" => {
-                        msg_out = Some(AppMessage::FormatJson);
+                        if event.shift {
+                            msg_out = Some(AppMessage::FormatJson);
+                        } else {
+                            self.tree_list.focus_search(&mut self.ui_context);
+                        }
                         handled = true;
                     }
                     "=" | "+" => {
@@ -1875,6 +1879,15 @@ impl Application for DataEditorApp {
                         handled = true;
                     }
                     _ => {}
+                }
+            }
+        }
+
+        if !event.ctrl && event.state == ElementState::Pressed {
+            if let Key::Character(ref ch) = event.logical_key {
+                if ch == "/" && self.ui_context.focused_widget.is_none() {
+                    self.tree_list.focus_search(&mut self.ui_context);
+                    handled = true;
                 }
             }
         }
