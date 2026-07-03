@@ -481,6 +481,7 @@ impl DataEditorApp {
         self.selected_value_editor.prepare_text(&mut self.font_system);
         self.new_key_editor.prepare_text(&mut self.font_system);
         self.selected_keybind_editor.prepare_text(&mut self.font_system);
+        self.tree_list.prepare_text(&mut self.font_system);
         self.text_items.clear();
         let scale = cce_ui::scale::scale_factor();
         let mut labels = Vec::new();
