@@ -240,8 +240,6 @@ fn bottom_y_calc(height: u32) -> f32 {
 struct DataEditorApp {
     // Toolbar Buttons
     btn_open: Dropdown,
-    btn_format: Button,
-    btn_exit: Button,
 
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
@@ -329,6 +327,7 @@ impl DataEditorApp {
             "Save".to_string(),
             "Save As".to_string(),
             "Refresh".to_string(),
+            "Format".to_string(),
             "-".to_string(),
             "Open...".to_string(),
         ];
@@ -336,6 +335,8 @@ impl DataEditorApp {
             options.push("-".to_string());
             options.extend(recent);
         }
+        options.push("-".to_string());
+        options.push("Exit".to_string());
         self.btn_open.options = options;
         self.btn_open.selected = 0;
         self.needs_rebuild = true;
@@ -559,20 +560,6 @@ impl DataEditorApp {
             scale,
         );
         Self::add_element_labels(
-            &self.btn_format,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.btn_exit,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
             &self.btn_add_key,
             &self.ui_context,
             &mut self.font_system,
@@ -697,8 +684,6 @@ impl Application for DataEditorApp {
 
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
         println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
-        let btn_format = Button::new(90.0, 8.0, 80.0, 26.0).with_label("Format");
-        let btn_exit = Button::new(720.0, 8.0, 70.0, 26.0).with_label("Exit");
 
         let mut new_key_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
         new_key_editor.set_placeholder("new.key.path");
@@ -770,6 +755,7 @@ impl Application for DataEditorApp {
             "Save".to_string(),
             "Save As".to_string(),
             "Refresh".to_string(),
+            "Format".to_string(),
             "-".to_string(),
             "Open...".to_string(),
         ];
@@ -777,6 +763,8 @@ impl Application for DataEditorApp {
             dropdown_options.push("-".to_string());
             dropdown_options.extend(recent);
         }
+        dropdown_options.push("-".to_string());
+        dropdown_options.push("Exit".to_string());
         let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("File");
         btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
@@ -802,8 +790,6 @@ impl Application for DataEditorApp {
             menubar,
             statusbar,
             btn_open,
-            btn_format,
-            btn_exit,
             flat_keys,
             selected_key_idx: None,
             tree_list,
@@ -1325,8 +1311,6 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_format.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_exit.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_add_key.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.new_key_editor.as_ptr_mut(), &mut self.ui_context);
@@ -1365,8 +1349,6 @@ impl Application for DataEditorApp {
             
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
-            self.btn_format.set_rect(90.0, 8.0, 80.0, 26.0);
-            self.btn_exit.set_rect((self.width as f32 - 80.0).max(180.0), 8.0, 70.0, 26.0);
             
             // Bottom edit area in left panel
             let bottom_y = bottom_y_calc(self.height);
@@ -1592,8 +1574,6 @@ impl Application for DataEditorApp {
             }
         } else {
             if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_format.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             
             if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1662,6 +1642,14 @@ impl Application for DataEditorApp {
                             println!("[DEBUG] File menu selected 'Refresh', Dispatching RefreshDocument");
                             msg_out = Some(AppMessage::RefreshDocument);
                         }
+                        "Format" => {
+                            println!("[DEBUG] File menu selected 'Format', Dispatching FormatJson");
+                            msg_out = Some(AppMessage::FormatJson);
+                        }
+                        "Exit" => {
+                            println!("[DEBUG] File menu selected 'Exit', Dispatching Exit");
+                            msg_out = Some(AppMessage::Exit);
+                        }
                         "Open..." | "Other" => {
                             println!("[DEBUG] File menu selected 'Open...', Dispatching OpenDocument");
                             msg_out = Some(AppMessage::OpenDocument);
@@ -1673,18 +1661,6 @@ impl Application for DataEditorApp {
                         }
                     }
                 }
-            }
-        }
-        if self.btn_format.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_format.take_click() {
-                msg_out = Some(AppMessage::FormatJson);
-            }
-        }
-        if self.btn_exit.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_exit.take_click() {
-                msg_out = Some(AppMessage::Exit);
             }
         }
         if self.btn_add_key.mouse_input(button, state, px, py, &mut self.ui_context) {
@@ -2062,6 +2038,8 @@ impl Application for DataEditorApp {
                             "Save" => msg_out = Some(AppMessage::SaveDocument),
                             "Save As" => msg_out = Some(AppMessage::SaveDocumentAs),
                             "Refresh" => msg_out = Some(AppMessage::RefreshDocument),
+                            "Format" => msg_out = Some(AppMessage::FormatJson),
+                            "Exit" => msg_out = Some(AppMessage::Exit),
                             "Open..." | "Other" => msg_out = Some(AppMessage::OpenDocument),
                             _ => {
                                 msg_out = Some(AppMessage::OpenRecent(std::path::PathBuf::from(option_text)));
