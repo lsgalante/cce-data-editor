@@ -240,10 +240,7 @@ fn bottom_y_calc(height: u32) -> f32 {
 struct DataEditorApp {
     // Toolbar Buttons
     btn_open: Dropdown,
-    btn_save: Button,
-    btn_save_as: Button,
     btn_format: Button,
-    btn_refresh: Button,
     btn_exit: Button,
 
     // Left Panel Form Edit
@@ -327,8 +324,13 @@ impl DataEditorApp {
     }
 
     fn update_recent_files_dropdown(&mut self, recent: Vec<String>) {
-        let mut options = recent;
-        options.push("Other".to_string());
+        let mut options = vec![
+            "Save".to_string(),
+            "Save As".to_string(),
+            "Refresh".to_string(),
+            "Open...".to_string(),
+        ];
+        options.extend(recent);
         self.btn_open.options = options;
         self.btn_open.selected = 0;
         self.needs_rebuild = true;
@@ -488,10 +490,7 @@ impl DataEditorApp {
 
         // 1. Button labels
         labels.extend(self.btn_open.text_labels());
-        labels.extend(self.btn_save.text_labels());
-        labels.extend(self.btn_save_as.text_labels());
         labels.extend(self.btn_format.text_labels());
-        labels.extend(self.btn_refresh.text_labels());
         labels.extend(self.btn_exit.text_labels());
         labels.extend(self.btn_add_key.text_labels());
 
@@ -644,10 +643,7 @@ impl Application for DataEditorApp {
     }
 
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
-        let btn_save = Button::new(90.0, 8.0, 70.0, 26.0).with_label("Save");
-        let btn_save_as = Button::new(170.0, 8.0, 80.0, 26.0).with_label("Save As");
-        let btn_format = Button::new(260.0, 8.0, 80.0, 26.0).with_label("Format");
-        let btn_refresh = Button::new(350.0, 8.0, 80.0, 26.0).with_label("Refresh");
+        let btn_format = Button::new(90.0, 8.0, 80.0, 26.0).with_label("Format");
         let btn_exit = Button::new(720.0, 8.0, 70.0, 26.0).with_label("Exit");
 
         let mut new_key_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
@@ -715,9 +711,14 @@ impl Application for DataEditorApp {
             }
         }
 
-        let mut dropdown_options = recent;
-        dropdown_options.push("Other".to_string());
-        let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("Open");
+        let mut dropdown_options = vec![
+            "Save".to_string(),
+            "Save As".to_string(),
+            "Refresh".to_string(),
+            "Open...".to_string(),
+        ];
+        dropdown_options.extend(recent);
+        let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("File");
         btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
         let mut tree_list = TreeList::new();
@@ -742,10 +743,7 @@ impl Application for DataEditorApp {
             menubar,
             statusbar,
             btn_open,
-            btn_save,
-            btn_save_as,
             btn_format,
-            btn_refresh,
             btn_exit,
             flat_keys,
             selected_key_idx: None,
@@ -1265,10 +1263,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_save.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_save_as.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_format.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_refresh.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_exit.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.btn_add_key.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
@@ -1307,11 +1302,8 @@ impl Application for DataEditorApp {
             
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
-            self.btn_save.set_rect(90.0, 8.0, 70.0, 26.0);
-            self.btn_save_as.set_rect(170.0, 8.0, 80.0, 26.0);
-            self.btn_format.set_rect(260.0, 8.0, 80.0, 26.0);
-            self.btn_refresh.set_rect(350.0, 8.0, 80.0, 26.0);
-            self.btn_exit.set_rect((self.width as f32 - 80.0).max(440.0), 8.0, 70.0, 26.0);
+            self.btn_format.set_rect(90.0, 8.0, 80.0, 26.0);
+            self.btn_exit.set_rect((self.width as f32 - 80.0).max(180.0), 8.0, 70.0, 26.0);
             
             // Bottom edit area in left panel
             let bottom_y = bottom_y_calc(self.height);
@@ -1514,10 +1506,7 @@ impl Application for DataEditorApp {
             }
         } else {
             if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_save.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_save_as.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_format.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_refresh.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_exit.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             
@@ -1573,39 +1562,36 @@ impl Application for DataEditorApp {
                 let selected_idx = self.btn_open.selected;
                 if selected_idx < self.btn_open.options.len() {
                     let option_text = &self.btn_open.options[selected_idx];
-                    if option_text == "Other" {
-                        println!("[DEBUG] Dropdown selected 'Other', Dispatching OpenDocument");
-                        msg_out = Some(AppMessage::OpenDocument);
-                    } else {
-                        let path = std::path::PathBuf::from(option_text);
-                        println!("[DEBUG] Dropdown selected recent file: {:?}", path);
-                        msg_out = Some(AppMessage::OpenRecent(path));
+                    match option_text.as_str() {
+                        "Save" => {
+                            println!("[DEBUG] File menu selected 'Save', Dispatching SaveDocument");
+                            msg_out = Some(AppMessage::SaveDocument);
+                        }
+                        "Save As" => {
+                            println!("[DEBUG] File menu selected 'Save As', Dispatching SaveDocumentAs");
+                            msg_out = Some(AppMessage::SaveDocumentAs);
+                        }
+                        "Refresh" => {
+                            println!("[DEBUG] File menu selected 'Refresh', Dispatching RefreshDocument");
+                            msg_out = Some(AppMessage::RefreshDocument);
+                        }
+                        "Open..." | "Other" => {
+                            println!("[DEBUG] File menu selected 'Open...', Dispatching OpenDocument");
+                            msg_out = Some(AppMessage::OpenDocument);
+                        }
+                        _ => {
+                            let path = std::path::PathBuf::from(option_text);
+                            println!("[DEBUG] File menu selected recent file: {:?}", path);
+                            msg_out = Some(AppMessage::OpenRecent(path));
+                        }
                     }
                 }
-            }
-        }
-        if self.btn_save.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_save.take_click() {
-                msg_out = Some(AppMessage::SaveDocument);
-            }
-        }
-        if self.btn_save_as.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_save_as.take_click() {
-                msg_out = Some(AppMessage::SaveDocumentAs);
             }
         }
         if self.btn_format.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             if state == ElementState::Released && self.btn_format.take_click() {
                 msg_out = Some(AppMessage::FormatJson);
-            }
-        }
-        if self.btn_refresh.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_refresh.take_click() {
-                msg_out = Some(AppMessage::RefreshDocument);
             }
         }
         if self.btn_exit.mouse_input(button, state, px, py, &mut self.ui_context) {
@@ -1941,10 +1927,14 @@ impl Application for DataEditorApp {
                     let selected_idx = self.btn_open.selected;
                     if selected_idx < self.btn_open.options.len() {
                         let option_text = &self.btn_open.options[selected_idx];
-                        if option_text == "Other" {
-                            msg_out = Some(AppMessage::OpenDocument);
-                        } else {
-                            msg_out = Some(AppMessage::OpenRecent(std::path::PathBuf::from(option_text)));
+                        match option_text.as_str() {
+                            "Save" => msg_out = Some(AppMessage::SaveDocument),
+                            "Save As" => msg_out = Some(AppMessage::SaveDocumentAs),
+                            "Refresh" => msg_out = Some(AppMessage::RefreshDocument),
+                            "Open..." | "Other" => msg_out = Some(AppMessage::OpenDocument),
+                            _ => {
+                                msg_out = Some(AppMessage::OpenRecent(std::path::PathBuf::from(option_text)));
+                            }
                         }
                     }
                 }
