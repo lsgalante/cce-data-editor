@@ -1838,8 +1838,19 @@ impl Application for DataEditorApp {
         let mut handled = false;
         let mut msg_out = None;
 
+        if event.state == ElementState::Pressed {
+            let open_search_shortcut = cce_ui::color::tree_open_search_key();
+            if match_key_shortcut(event, &open_search_shortcut) {
+                let has_ctrl = open_search_shortcut.to_lowercase().contains("ctrl") || open_search_shortcut.to_lowercase().contains("control");
+                if has_ctrl || self.ui_context.focused_widget.is_none() {
+                    self.tree_list.focus_search(&mut self.ui_context);
+                    handled = true;
+                }
+            }
+        }
+
         // Keyboard Shortcuts
-        if event.ctrl && event.state == ElementState::Pressed {
+        if !handled && event.ctrl && event.state == ElementState::Pressed {
             if let Key::Character(ref ch) = event.logical_key {
                 match ch.to_lowercase().as_str() {
                     "o" => {
@@ -1857,10 +1868,8 @@ impl Application for DataEditorApp {
                     "f" => {
                         if event.shift {
                             msg_out = Some(AppMessage::FormatJson);
-                        } else {
-                            self.tree_list.focus_search(&mut self.ui_context);
+                            handled = true;
                         }
-                        handled = true;
                     }
                     "=" | "+" => {
                         self.raw_json_editor.font_size = (self.raw_json_editor.font_size + 1.0).min(72.0);
@@ -1879,15 +1888,6 @@ impl Application for DataEditorApp {
                         handled = true;
                     }
                     _ => {}
-                }
-            }
-        }
-
-        if !event.ctrl && event.state == ElementState::Pressed {
-            if let Key::Character(ref ch) = event.logical_key {
-                if ch == "/" && self.ui_context.focused_widget.is_none() {
-                    self.tree_list.focus_search(&mut self.ui_context);
-                    handled = true;
                 }
             }
         }
@@ -1957,6 +1957,52 @@ fn parse_hex_color_rgba(s: &str) -> Option<[u8; 4]> {
 
 fn parse_hex_color(s: &str) -> Option<[u8; 3]> {
     parse_hex_color_rgba(s).map(|rgba| [rgba[0], rgba[1], rgba[2]])
+}
+
+fn match_key_shortcut(event: &KeyEvent, shortcut_str: &str) -> bool {
+    let shortcut_lower = shortcut_str.to_lowercase();
+    let parts: Vec<&str> = shortcut_lower.split('+').collect();
+    
+    let mut req_ctrl = false;
+    let mut req_shift = false;
+    let mut req_key = "";
+    
+    for part in parts {
+        match part {
+            "ctrl" | "control" => req_ctrl = true,
+            "shift" => req_shift = true,
+            "super" | "win" | "logo" | "alt" | "meta" => {}
+            k => req_key = k,
+        }
+    }
+    
+    if event.ctrl != req_ctrl { return false; }
+    if event.shift != req_shift { return false; }
+    
+    if let Key::Character(ref ch) = event.logical_key {
+        let ch_lower = ch.to_lowercase();
+        if req_key.len() == 1 {
+            return ch_lower == req_key;
+        } else {
+            let mapped_key = match req_key {
+                "slash" => "/",
+                "enter" => "enter",
+                "escape" => "escape",
+                "space" => " ",
+                k => k,
+            };
+            return ch_lower == mapped_key;
+        }
+    } else if let Key::Named(named) = event.logical_key {
+        let named_str = match named {
+            cce_ui::widget::NamedKey::Enter => "enter",
+            cce_ui::widget::NamedKey::Escape => "escape",
+            cce_ui::widget::NamedKey::Space => "space",
+            _ => "",
+        };
+        return named_str == req_key;
+    }
+    false
 }
 
 fn format_hex_color(color: [u8; 3]) -> String {
