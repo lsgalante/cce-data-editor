@@ -1092,6 +1092,10 @@ impl Application for DataEditorApp {
     }
 
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
+        if self.ui_context.tick(_dt) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
         if self.selected_color_editor.tick(_dt, &mut self.ui_context) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
@@ -1892,6 +1896,11 @@ impl Application for DataEditorApp {
             }
         }
 
+        if !handled {
+            if self.tree_list.search_box.keyboard_input(event, &mut self.ui_context) {
+                handled = true;
+            }
+        }
         if !handled {
             if self.btn_open.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
