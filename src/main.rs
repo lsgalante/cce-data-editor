@@ -328,9 +328,13 @@ impl DataEditorApp {
             "Save".to_string(),
             "Save As".to_string(),
             "Refresh".to_string(),
+            "-".to_string(),
             "Open...".to_string(),
         ];
-        options.extend(recent);
+        if !recent.is_empty() {
+            options.push("-".to_string());
+            options.extend(recent);
+        }
         self.btn_open.options = options;
         self.btn_open.selected = 0;
         self.needs_rebuild = true;
@@ -715,9 +719,13 @@ impl Application for DataEditorApp {
             "Save".to_string(),
             "Save As".to_string(),
             "Refresh".to_string(),
+            "-".to_string(),
             "Open...".to_string(),
         ];
-        dropdown_options.extend(recent);
+        if !recent.is_empty() {
+            dropdown_options.push("-".to_string());
+            dropdown_options.extend(recent);
+        }
         let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("File");
         btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
