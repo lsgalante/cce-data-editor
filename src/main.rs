@@ -509,10 +509,7 @@ impl DataEditorApp {
         let mut labels = Vec::new();
 
         // 1. Button labels
-        labels.extend(self.btn_open.text_labels());
-        labels.extend(self.btn_format.text_labels());
-        labels.extend(self.btn_exit.text_labels());
-        labels.extend(self.btn_add_key.text_labels());
+        // (Moved to step 5 to use add_element_labels for proper font support)
 
         // 2. Section labels
         let bottom_y = bottom_y_calc(self.height);
@@ -553,6 +550,34 @@ impl DataEditorApp {
         self.menubar.prepare_text(&mut self.font_system);
 
         // 5. Add Textbox / Element contents to text_items
+        Self::add_element_labels(
+            &self.btn_open,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
+            &self.btn_format,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
+            &self.btn_exit,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
+        Self::add_element_labels(
+            &self.btn_add_key,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
         Self::add_element_labels(
             &self.statusbar,
             &self.ui_context,
@@ -789,11 +814,7 @@ impl Application for DataEditorApp {
             height: 600,
             scale_factor: 1.0,
             text_items: Vec::new(),
-            font_system: {
-                let mut fs = FontSystem::new();
-                fs.db_mut().load_fonts_dir("/home/lsgalante/Dropbox/Fonts");
-                fs
-            },
+            font_system: cce_ui::create_font_system(),
             needs_rebuild: true,
             ui_context: cce_ui::context::UiContext::new(),
             ctrl_pressed: false,
