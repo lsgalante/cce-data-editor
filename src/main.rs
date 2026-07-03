@@ -404,6 +404,22 @@ impl DataEditorApp {
         self.raw_json_editor.sync_editor_state();
     }
 
+    fn rename_key_path(&mut self, old_path: &str, new_path: &str) {
+        let old_prefix = format!("{}.", old_path);
+        let new_prefix = format!("{}.", new_path);
+
+        for (k, _) in &mut self.flat_keys {
+            if k == old_path {
+                *k = new_path.to_string();
+            } else if k.starts_with(&old_prefix) {
+                *k = k.replacen(&old_prefix, &new_prefix, 1);
+            }
+        }
+        
+        self.update_raw_from_flat();
+        self.rebuild_tree();
+    }
+
     fn sync_preview_selection(&mut self) {
         if let Some(idx) = self.selected_key_idx {
             if idx < self.flat_keys.len() {
@@ -647,6 +663,7 @@ impl Application for DataEditorApp {
     }
 
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
+        println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
         let btn_format = Button::new(90.0, 8.0, 80.0, 26.0).with_label("Format");
         let btn_exit = Button::new(720.0, 8.0, 70.0, 26.0).with_label("Exit");
 
@@ -1083,6 +1100,11 @@ impl Application for DataEditorApp {
 
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
         if self.ui_context.tick(_dt) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
+            self.rename_key_path(&old_path, &new_path);
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -1702,6 +1724,9 @@ impl Application for DataEditorApp {
 
         if !editor_handled && self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
+            if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
+                self.rename_key_path(&old_path, &new_path);
+            }
             if let Some(clicked_item) = self.tree_list.take_clicked_item() {
                 match clicked_item {
                     TreeElement::Section { .. } => {
@@ -1922,7 +1947,7 @@ impl Application for DataEditorApp {
         }
 
         if !handled {
-            if self.tree_list.search_box.keyboard_input(event, &mut self.ui_context) {
+            if self.tree_list.keyboard_input(event, &mut self.ui_context) {
                 handled = true;
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
