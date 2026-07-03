@@ -1674,6 +1674,53 @@ impl Application for DataEditorApp {
         if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
+
+            if button == MouseButton::Left && state == ElementState::Pressed {
+                let cursor_offset = self.raw_json_editor.cursor_idx;
+                let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
+                
+                let mut best_key = None;
+                let mut best_span_len = usize::MAX;
+                
+                for (flat_key, _) in &self.flat_keys {
+                    let tokens = parse_path(flat_key);
+                    if let Some((start, end)) = find_kdl_span(content, &tokens) {
+                        if cursor_offset >= start && cursor_offset <= end {
+                            let span_len = end - start;
+                            if span_len < best_span_len {
+                                best_span_len = span_len;
+                                best_key = Some(flat_key.clone());
+                            }
+                        }
+                    }
+                }
+                
+                if let Some(key_path) = best_key {
+                    if self.tree_list.select_and_show_key(&key_path) {
+                        self.selected_key_idx = self.tree_list.selected_key_idx;
+                        if let Some(idx) = self.selected_key_idx {
+                            self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                            self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                            self.selected_value_editor.editing = false;
+                            
+                            let val = &self.flat_keys[idx].1;
+                            if let serde_json::Value::String(s) = val {
+                                if let Some(c) = parse_hex_color(s) {
+                                    self.selected_color_editor.color = c;
+                                } else {
+                                    self.selected_font_editor.font_family = s.clone();
+                                }
+                            } else if let Some(num) = val.as_i64() {
+                                self.selected_spinbox_editor.value = num as i32;
+                            } else if let serde_json::Value::Bool(b) = val {
+                                self.selected_bool_editor.set_checked(*b);
+                            }
+                        }
+                        self.sync_preview_selection();
+                        changed = true;
+                    }
+                }
+            }
         }
 
         if !editor_handled && self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
