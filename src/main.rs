@@ -260,6 +260,7 @@ struct DataEditorApp {
     selected_choice_editor: Dropdown,
     selected_keybind_editor: KeybindRecorder,
     selected_bool_editor: Checkbox,
+    selected_button_editor: Button,
 
     // Right Panel Raw Json
     raw_json_editor: TextBox,
@@ -648,6 +649,13 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
+        Self::add_element_labels(
+            &self.selected_button_editor,
+            &self.ui_context,
+            &mut self.font_system,
+            &mut self.text_items,
+            scale,
+        );
 
         // 6. Build static text items
         for label in labels {
@@ -704,6 +712,7 @@ impl Application for DataEditorApp {
         let selected_choice_editor = Dropdown::new(Vec::new(), 0);
         let selected_keybind_editor = KeybindRecorder::new(String::new());
         let selected_bool_editor = Checkbox::new();
+        let selected_button_editor = Button::new(0.0, 0.0, 125.0, 26.0).with_label("Send Test");
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -807,6 +816,7 @@ impl Application for DataEditorApp {
             selected_choice_editor,
             selected_keybind_editor,
             selected_bool_editor,
+            selected_button_editor,
             raw_json_editor,
             current_file_path,
             status_message: None,
@@ -1307,6 +1317,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), &mut (*self_ptr).selected_bool_editor as *mut Checkbox as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), &mut (*self_ptr).selected_button_editor as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
 
@@ -1326,6 +1337,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.selected_choice_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_keybind_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_bool_editor.as_ptr_mut(), &mut self.ui_context);
+                self.root_window.add_child(self.selected_button_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
@@ -1376,11 +1388,14 @@ impl Application for DataEditorApp {
                     
                     let mut is_menu_type = false;
                     let mut menu_options = Vec::new();
+                    let mut is_button_type = false;
                     if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
                         if annotation.starts_with("menu:") {
                             is_menu_type = true;
                             let opts_str = annotation.trim_start_matches("menu:");
                             menu_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
+                        } else if annotation == "button" {
+                            is_button_type = true;
                         }
                     }
 
@@ -1404,7 +1419,25 @@ impl Application for DataEditorApp {
                         self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    } else if is_button_type {
+                        let val_str = match val {
+                            serde_json::Value::String(st) => st.clone(),
+                            _ => "Trigger".to_string(),
+                        };
+                        if let Some(b) = self.selected_button_editor.base_mut() {
+                            b.label = Some(val_str);
+                        }
+                        self.selected_button_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     } else {
+                        self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
                         if is_keybind_type {
@@ -1468,6 +1501,7 @@ impl Application for DataEditorApp {
                     self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1477,6 +1511,7 @@ impl Application for DataEditorApp {
                 self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
             // Right pane raw editor
@@ -1569,6 +1604,7 @@ impl Application for DataEditorApp {
             if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_keybind_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_bool_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.selected_button_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
 
             if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1690,6 +1726,38 @@ impl Application for DataEditorApp {
         if self.selected_bool_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
+        }
+        if self.selected_button_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+            changed = true;
+            editor_handled = true;
+            if state == ElementState::Released && self.selected_button_editor.take_click() {
+                if let Some(idx) = self.selected_key_idx {
+                    let key_name = &self.flat_keys[idx].0;
+                    if key_name == "notifications.test_notification" {
+                        println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
+                        std::process::Command::new("busctl")
+                            .args([
+                                "--user",
+                                "call",
+                                "org.freedesktop.Notifications",
+                                "/org/freedesktop/Notifications",
+                                "org.freedesktop.Notifications",
+                                "Notify",
+                                "susssasa{sv}i",
+                                "cce-client",
+                                "0",
+                                "",
+                                "CCE Test Notification",
+                                "This is a test notification from the Data Editor.",
+                                "0",
+                                "0",
+                                "-1",
+                            ])
+                            .spawn()
+                            .ok();
+                    }
+                }
+            }
         }
         if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
