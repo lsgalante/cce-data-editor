@@ -1394,7 +1394,7 @@ impl Application for DataEditorApp {
                     } else {
                         self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete");
                         if is_keybind_type {
                             let val_str = match val {
                                 serde_json::Value::String(st) => st.clone(),
@@ -1830,7 +1830,7 @@ impl Application for DataEditorApp {
                             self.selected_bool_editor.set_checked(*b);
                         }
                         
-                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind");
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete");
 
                         if is_menu_type {
                             self.ui_context.set_focused(&mut self.selected_choice_editor);
