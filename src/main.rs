@@ -1344,7 +1344,9 @@ impl Application for DataEditorApp {
                     let mut is_menu_type = false;
                     let mut menu_options = Vec::new();
                     let mut is_button_type = false;
+                    let mut annotation_str = None;
                     if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
+                        annotation_str = Some(annotation.clone());
                         if annotation.starts_with("menu:") {
                             is_menu_type = true;
                             let opts_str = annotation.trim_start_matches("menu:");
@@ -1394,7 +1396,7 @@ impl Application for DataEditorApp {
                     } else {
                         self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete");
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete") || key_name == "brightness_up" || key_name == "brightness_down" || key_name.ends_with(".brightness_up") || key_name.ends_with(".brightness_down") || annotation_str.as_deref() == Some("keybind");
                         if is_keybind_type {
                             let val_str = match val {
                                 serde_json::Value::String(st) => st.clone(),
@@ -1794,7 +1796,9 @@ impl Application for DataEditorApp {
                         
                         let mut is_menu_type = false;
                         let mut menu_options = Vec::new();
+                        let mut annotation_str = None;
                         if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
+                            annotation_str = Some(annotation.clone());
                             if annotation.starts_with("menu:") {
                                 is_menu_type = true;
                                 let opts_str = annotation.trim_start_matches("menu:");
@@ -1830,7 +1834,7 @@ impl Application for DataEditorApp {
                             self.selected_bool_editor.set_checked(*b);
                         }
                         
-                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete");
+                        let is_keybind_type = key_name == "key" || key_name == "keybind" || key_name == "shortcut" || key_name == "delete" || key_name.ends_with("_key") || key_name.ends_with(".key") || key_name.ends_with(".keybind") || key_name.ends_with("_delete") || key_name.ends_with(".delete") || key_name == "brightness_up" || key_name == "brightness_down" || key_name.ends_with(".brightness_up") || key_name.ends_with(".brightness_down") || annotation_str.as_deref() == Some("keybind");
 
                         if is_menu_type {
                             self.ui_context.set_focused(&mut self.selected_choice_editor);
