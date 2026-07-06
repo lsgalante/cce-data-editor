@@ -674,6 +674,17 @@ impl Application for DataEditorApp {
         Some(&mut self.ui_context)
     }
 
+    fn is_movable_backplate_at(&self, px: f32, py: f32) -> bool {
+        let splitter_x1 = self.tree_list_width + 10.0;
+        let splitter_x2 = self.tree_list_width + 20.0;
+        let list_top = 52.0;
+        let list_bottom = self.height as f32 - 40.0;
+        if self.dragging_splitter || (px >= splitter_x1 && px <= splitter_x2 && py >= list_top && py <= list_bottom) {
+            return false;
+        }
+        self.ui_context.is_movable_backplate_at(px, py)
+    }
+
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
         println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
 
