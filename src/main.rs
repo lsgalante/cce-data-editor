@@ -510,7 +510,7 @@ impl DataEditorApp {
         labels.push((
             TextLabel {
                 text: format!("File: {}", file_name_str),
-                x: 420.0,
+                x: 410.0,
                 y: 15.0,
                 font_size: 12.0,
                 color: [0xdd, 0xdd, 0xe2],
@@ -1453,10 +1453,9 @@ impl Application for DataEditorApp {
                 self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
-            // Right pane raw editor
-            let right_w = (self.width as f32 - 420.0).max(100.0);
+            let right_w = (self.width as f32 - 410.0).max(100.0);
             let right_h = (self.height as f32 - 92.0).max(100.0);
-            self.raw_json_editor.set_rect(410.0, 52.0, right_w, right_h);
+            self.raw_json_editor.set_rect(400.0, 52.0, right_w, right_h);
             
             self.rebuild_text_items();
             self.ui_context.rebuild_spatial_grid();
@@ -1834,7 +1833,7 @@ impl Application for DataEditorApp {
                 }
             }
         } else if !editor_handled && button == MouseButton::Left && state == ElementState::Pressed {
-            let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            let in_raw = px >= 400.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
             
             if !in_raw {
                 self.raw_json_editor.unfocus();
