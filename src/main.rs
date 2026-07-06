@@ -281,6 +281,9 @@ struct DataEditorApp {
     ctrl_pressed: bool,
     initial_focus: bool,
     widgets_registered: bool,
+    cached_content: String,
+    cached_flat_keys: Vec<(String, serde_json::Value)>,
+    cached_annotations: Vec<Option<String>>,
 }
 
 
@@ -429,14 +432,19 @@ impl DataEditorApp {
 
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
-        let mut annotations = Vec::new();
         let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
-        for (key_path, _) in &self.flat_keys {
-            let anno = cce_ui::config::get_kdl_type_annotation(content, key_path);
-            annotations.push(anno);
+        
+        let needs_anno_rebuild = content != &self.cached_content || self.flat_keys != self.cached_flat_keys;
+        if needs_anno_rebuild {
+            self.cached_content = content.clone();
+            self.cached_flat_keys = self.flat_keys.clone();
+            
+            let keys: Vec<String> = self.flat_keys.iter().map(|(k, _)| k.clone()).collect();
+            self.cached_annotations = cce_ui::config::get_kdl_type_annotations(content, &keys);
+            
+            self.tree_list.annotations = self.cached_annotations.clone();
+            self.tree_list.set_flat_keys(self.flat_keys.clone());
         }
-        self.tree_list.annotations = annotations;
-        self.tree_list.set_flat_keys(self.flat_keys.clone());
     }
 
     fn add_element_labels(
@@ -742,13 +750,13 @@ impl Application for DataEditorApp {
         btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
 
         let mut tree_list = TreeList::new();
-        let mut annotations = Vec::new();
-        for (key_path, _) in &flat_keys {
-            let anno = cce_ui::config::get_kdl_type_annotation(&raw_json_editor.text, key_path);
-            annotations.push(anno);
-        }
-        tree_list.annotations = annotations;
+        let keys_to_anno: Vec<String> = flat_keys.iter().map(|(k, _)| k.clone()).collect();
+        let cached_annotations = cce_ui::config::get_kdl_type_annotations(&raw_json_editor.text, &keys_to_anno);
+        tree_list.annotations = cached_annotations.clone();
         tree_list.set_flat_keys(flat_keys.clone());
+
+        let cached_content = raw_json_editor.text.clone();
+        let cached_flat_keys = flat_keys.clone();
 
         let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_color([0.08, 0.08, 0.12, 1.0]);
         let statusbar = StatusBar::new()
@@ -789,6 +797,9 @@ impl Application for DataEditorApp {
             ctrl_pressed: false,
             initial_focus: true,
             widgets_registered: false,
+            cached_content,
+            cached_flat_keys,
+            cached_annotations,
         }
     }
 
