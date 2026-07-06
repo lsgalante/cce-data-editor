@@ -276,6 +276,8 @@ struct DataEditorApp {
     cached_content: String,
     cached_flat_keys: Vec<(String, serde_json::Value)>,
     cached_annotations: Vec<Option<String>>,
+    tree_list_width: f32,
+    dragging_splitter: bool,
 }
 
 
@@ -510,7 +512,7 @@ impl DataEditorApp {
         labels.push((
             TextLabel {
                 text: format!("File: {}", file_name_str),
-                x: 410.0,
+                x: self.tree_list_width + 30.0,
                 y: 15.0,
                 font_size: 12.0,
                 color: [0xdd, 0xdd, 0xe2],
@@ -792,6 +794,8 @@ impl Application for DataEditorApp {
             cached_content,
             cached_flat_keys,
             cached_annotations,
+            tree_list_width: 380.0,
+            dragging_splitter: false,
         }
     }
 
@@ -1314,7 +1318,7 @@ impl Application for DataEditorApp {
             let list_top = 52.0;
             let right_h = (self.height as f32 - 92.0).max(100.0);
             let list_height = right_h;
-            self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
+            self.tree_list.set_rect(10.0, list_top, self.tree_list_width, list_height);
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
@@ -1453,9 +1457,10 @@ impl Application for DataEditorApp {
                 self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
-            let right_w = (self.width as f32 - 410.0).max(100.0);
+            let right_x = self.tree_list_width + 20.0;
+            let right_w = (self.width as f32 - self.tree_list_width - 30.0).max(100.0);
             let right_h = (self.height as f32 - 92.0).max(100.0);
-            self.raw_json_editor.set_rect(400.0, 52.0, right_w, right_h);
+            self.raw_json_editor.set_rect(right_x, 52.0, right_w, right_h);
             
             self.rebuild_text_items();
             self.ui_context.rebuild_spatial_grid();
@@ -1524,6 +1529,14 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
+        if self.dragging_splitter {
+            let new_width = (px - 15.0).clamp(100.0, self.width as f32 - 150.0);
+            if (self.tree_list_width - new_width).abs() > 0.1 {
+                self.tree_list_width = new_width;
+                changed = true;
+            }
+        }
+
         if cce_ui::widget::context_menu::is_visible() {
             if cce_ui::widget::context_menu::cursor_moved(px, py) {
                 changed = true;
@@ -1555,6 +1568,26 @@ impl Application for DataEditorApp {
         let mut msg_out = None;
         let px = pos.x as f32;
         let py = pos.y as f32;
+
+        if button == MouseButton::Left {
+            if state == ElementState::Pressed {
+                let splitter_x1 = self.tree_list_width + 10.0;
+                let splitter_x2 = self.tree_list_width + 20.0;
+                let list_top = 52.0;
+                let list_bottom = self.height as f32 - 40.0;
+                if px >= splitter_x1 && px <= splitter_x2 && py >= list_top && py <= list_bottom {
+                    self.dragging_splitter = true;
+                    return None;
+                }
+            } else if state == ElementState::Released {
+                if self.dragging_splitter {
+                    self.dragging_splitter = false;
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                    return None;
+                }
+            }
+        }
 
         if cce_ui::widget::context_menu::is_visible() {
             if cce_ui::widget::context_menu::mouse_input(button, state, px, py) {
@@ -1833,7 +1866,7 @@ impl Application for DataEditorApp {
                 }
             }
         } else if !editor_handled && button == MouseButton::Left && state == ElementState::Pressed {
-            let in_raw = px >= 400.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            let in_raw = px >= self.tree_list_width + 20.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
             
             if !in_raw {
                 self.raw_json_editor.unfocus();
