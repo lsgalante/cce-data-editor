@@ -16,7 +16,6 @@ enum AppMessage {
     SaveDocumentAs,
     FormatJson,
     RefreshDocument,
-    AddKey,
     ApplyValue,
     DeleteKey,
 }
@@ -233,9 +232,6 @@ fn unflatten_json(flat: &[(String, serde_json::Value)]) -> serde_json::Value {
     root
 }
 
-fn bottom_y_calc(height: u32) -> f32 {
-    height as f32 - 180.0
-}
 
 struct DataEditorApp {
     // Toolbar Buttons
@@ -245,10 +241,6 @@ struct DataEditorApp {
     flat_keys: Vec<(String, serde_json::Value)>,
     selected_key_idx: Option<usize>,
     tree_list: TreeList,
-
-    // New Key input
-    new_key_editor: TextBox,
-    btn_add_key: Button,
 
     // Edit Value input
     selected_value_editor: TextBox,
@@ -497,7 +489,6 @@ impl DataEditorApp {
         self.rebuild_tree();
         self.raw_json_editor.prepare_text(&mut self.font_system);
         self.selected_value_editor.prepare_text(&mut self.font_system);
-        self.new_key_editor.prepare_text(&mut self.font_system);
         self.selected_keybind_editor.prepare_text(&mut self.font_system);
         self.tree_list.prepare_text(&mut self.font_system);
         self.text_items.clear();
@@ -508,17 +499,6 @@ impl DataEditorApp {
         // (Moved to step 5 to use add_element_labels for proper font support)
 
         // 2. Section labels
-        let bottom_y = bottom_y_calc(self.height);
-        labels.push((
-            TextLabel {
-                text: "Add New Key:".to_string(),
-                x: 10.0,
-                y: bottom_y - 6.0,
-                font_size: 11.0,
-                color: [0x83, 0x83, 0x8a],
-            },
-            Some(cce_ui::layout::section_label_font()),
-        ));
 
 
 
@@ -554,13 +534,6 @@ impl DataEditorApp {
         // 5. Add Textbox / Element contents to text_items
         Self::add_element_labels(
             &self.btn_open,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.btn_add_key,
             &self.ui_context,
             &mut self.font_system,
             &mut self.text_items,
@@ -615,13 +588,7 @@ impl DataEditorApp {
             &mut self.text_items,
             scale,
         );
-        Self::add_element_labels(
-            &self.new_key_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
+
         Self::add_element_labels(
             &self.selected_keybind_editor,
             &self.ui_context,
@@ -708,9 +675,7 @@ impl Application for DataEditorApp {
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
         println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
 
-        let mut new_key_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
-        new_key_editor.set_placeholder("new.key.path");
-        let btn_add_key = Button::new(280.0, 430.0, 100.0, 26.0).with_label("Add Key");
+
 
         let mut selected_value_editor = TextBox::new(String::new()).with_multiline(false).with_draw_bg_border(true);
         selected_value_editor.set_placeholder("value (e.g. 42, true, \"hello\")");
@@ -803,8 +768,6 @@ impl Application for DataEditorApp {
             flat_keys,
             selected_key_idx: None,
             tree_list,
-            new_key_editor,
-            btn_add_key,
             selected_value_editor,
             selected_color_editor,
             selected_spinbox_editor,
@@ -1001,42 +964,7 @@ impl Application for DataEditorApp {
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
             }
-            AppMessage::AddKey => {
-                let new_key = if self.new_key_editor.editing { &self.new_key_editor.edit_buffer } else { &self.new_key_editor.text };
-                let trimmed = new_key.trim().to_string();
-                if trimmed.is_empty() {
-                    self.status_message = Some(("Key path cannot be empty".to_string(), true));
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
-                    return;
-                }
-                
-                if self.flat_keys.iter().any(|(k, _)| k == &trimmed) {
-                    self.status_message = Some(("Key path already exists".to_string(), true));
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
-                    return;
-                }
-                
-                self.flat_keys.push((trimmed.clone(), serde_json::Value::String(String::new())));
-                self.update_raw_from_flat();
-                
-                self.new_key_editor.text.clear();
-                self.new_key_editor.edit_buffer.clear();
-                self.new_key_editor.editing = false;
-                
-                if let Some(idx) = self.flat_keys.iter().position(|(k, _)| k == &trimmed) {
-                    self.selected_key_idx = Some(idx);
-                    self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                    self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
-                    self.selected_value_editor.editing = false;
-                    self.sync_preview_selection();
-                }
-                
-                self.status_message = Some((format!("Added key: {}", trimmed), false));
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
+
             AppMessage::ApplyValue => {
                 if let Some(idx) = self.selected_key_idx {
                     let val_str = if self.selected_value_editor.editing { &self.selected_value_editor.edit_buffer } else { &self.selected_value_editor.text };
@@ -1135,6 +1063,27 @@ impl Application for DataEditorApp {
         }
         if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
             self.rename_key_path(&old_path, &new_path);
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        if let Some(new_key) = self.tree_list.take_new_key_path_request() {
+            let trimmed = new_key.trim().to_string();
+            if trimmed.is_empty() {
+                self.status_message = Some(("Key path cannot be empty".to_string(), true));
+            } else if self.flat_keys.iter().any(|(k, _)| k == &trimmed) {
+                self.status_message = Some(("Key path already exists".to_string(), true));
+            } else {
+                self.flat_keys.push((trimmed.clone(), serde_json::Value::String(String::new())));
+                self.update_raw_from_flat();
+                if let Some(idx) = self.flat_keys.iter().position(|(k, _)| k == &trimmed) {
+                    self.selected_key_idx = Some(idx);
+                    self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                    self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                    self.selected_value_editor.editing = false;
+                    self.sync_preview_selection();
+                }
+                self.status_message = Some((format!("Added key: {}", trimmed), false));
+            }
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -1324,9 +1273,7 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.btn_add_key.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.new_key_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_color_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
@@ -1363,15 +1310,10 @@ impl Application for DataEditorApp {
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
             
-            // Bottom edit area in left panel
-            let bottom_y = bottom_y_calc(self.height);
-            self.new_key_editor.set_rect(10.0, bottom_y + 10.0, 260.0, 26.0);
-            self.btn_add_key.set_rect(280.0, bottom_y + 10.0, 100.0, 26.0);
-
             // Position tree_list
             let list_top = 52.0;
-            let list_bottom = bottom_y_calc(self.height) - 25.0;
-            let list_height = list_bottom - list_top;
+            let right_h = (self.height as f32 - 92.0).max(100.0);
+            let list_height = right_h;
             self.tree_list.set_rect(10.0, list_top, 380.0, list_height);
 
             // Position the selected value editor inline inside the list if visible
@@ -1589,9 +1531,6 @@ impl Application for DataEditorApp {
             }
         } else {
             if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.btn_add_key.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            
-            if self.new_key_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
             if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
@@ -1678,18 +1617,7 @@ impl Application for DataEditorApp {
                 }
             }
         }
-        if self.btn_add_key.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            if state == ElementState::Released && self.btn_add_key.take_click() {
-                msg_out = Some(AppMessage::AddKey);
-            }
-        }
-
         let mut editor_handled = false;
-        if self.new_key_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
-            changed = true;
-            editor_handled = true;
-        }
         if self.selected_value_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
             changed = true;
             editor_handled = true;
@@ -1906,14 +1834,10 @@ impl Application for DataEditorApp {
                 }
             }
         } else if !editor_handled && button == MouseButton::Left && state == ElementState::Pressed {
-            let bottom_y = bottom_y_calc(self.height);
-            let in_new_key = px >= 10.0 && px <= 270.0 && py >= bottom_y + 10.0 && py <= bottom_y + 36.0;
-            let in_sel_val = px >= 10.0 && px <= 270.0 && py >= bottom_y + 70.0 && py <= bottom_y + 96.0;
             let in_raw = px >= 410.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
             
-            if !in_new_key && !in_sel_val && !in_raw {
+            if !in_raw {
                 self.raw_json_editor.unfocus();
-                self.new_key_editor.unfocus();
                 self.selected_value_editor.unfocus();
                 self.selected_color_editor.unfocus();
                 self.selected_spinbox_editor.unfocus();
@@ -2019,7 +1943,6 @@ impl Application for DataEditorApp {
                     "=" | "+" => {
                         self.raw_json_editor.font_size = (self.raw_json_editor.font_size + 1.0).min(72.0);
                         self.selected_value_editor.font_size = (self.selected_value_editor.font_size + 1.0).min(72.0);
-                        self.new_key_editor.font_size = (self.new_key_editor.font_size + 1.0).min(72.0);
                         *needs_rebuild = true;
                         self.needs_rebuild = true;
                         handled = true;
@@ -2027,7 +1950,6 @@ impl Application for DataEditorApp {
                     "-" | "_" => {
                         self.raw_json_editor.font_size = (self.raw_json_editor.font_size - 1.0).max(6.0);
                         self.selected_value_editor.font_size = (self.selected_value_editor.font_size - 1.0).max(6.0);
-                        self.new_key_editor.font_size = (self.new_key_editor.font_size - 1.0).max(6.0);
                         *needs_rebuild = true;
                         self.needs_rebuild = true;
                         handled = true;
@@ -2077,12 +1999,6 @@ impl Application for DataEditorApp {
             if self.selected_font_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_choice_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
             if self.selected_keybind_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.new_key_editor.keyboard_input(event, &mut self.ui_context) {
-                handled = true;
-                if event.state == ElementState::Pressed && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter) {
-                    msg_out = Some(AppMessage::AddKey);
-                }
-            }
         }
 
         if handled {
