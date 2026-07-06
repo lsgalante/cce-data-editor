@@ -502,20 +502,23 @@ impl DataEditorApp {
         self.tree_list.prepare_text(&mut self.font_system);
         self.text_items.clear();
         let scale = cce_ui::scale::scale_factor();
-        let mut labels = Vec::new();
+        let mut labels: Vec<(TextLabel, Option<String>)> = Vec::new();
 
         // 1. Button labels
         // (Moved to step 5 to use add_element_labels for proper font support)
 
         // 2. Section labels
         let bottom_y = bottom_y_calc(self.height);
-        labels.push(TextLabel {
-            text: "Add New Key:".to_string(),
-            x: 10.0,
-            y: bottom_y - 6.0,
-            font_size: 11.0,
-            color: [0x83, 0x83, 0x8a],
-        });
+        labels.push((
+            TextLabel {
+                text: "Add New Key:".to_string(),
+                x: 10.0,
+                y: bottom_y - 6.0,
+                font_size: 11.0,
+                color: [0x83, 0x83, 0x8a],
+            },
+            Some(cce_ui::layout::section_label_font()),
+        ));
 
 
 
@@ -524,13 +527,16 @@ impl DataEditorApp {
             Some(path) => path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
             None => "Untitled".to_string(),
         };
-        labels.push(TextLabel {
-            text: format!("File: {}", file_name_str),
-            x: 420.0,
-            y: 15.0,
-            font_size: 12.0,
-            color: [0xdd, 0xdd, 0xe2],
-        });
+        labels.push((
+            TextLabel {
+                text: format!("File: {}", file_name_str),
+                x: 420.0,
+                y: 15.0,
+                font_size: 12.0,
+                color: [0xdd, 0xdd, 0xe2],
+            },
+            Some(cce_ui::layout::menubar_font()),
+        ));
 
         // 4. Status Bar indicators
         if let Some((msg, is_error)) = &self.status_message {
@@ -639,11 +645,34 @@ impl DataEditorApp {
         );
 
         // 6. Build static text items
-        for label in labels {
-            let physical_size = label.font_size * scale;
+        for (label, font_family) in labels {
+            let mut font_size = label.font_size;
+            let mut family_name = None;
+            if let Some(ref font_str) = font_family {
+                let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
+                if let Some(ps) = parsed_size {
+                    font_size = ps;
+                }
+                family_name = Some(parsed_family);
+            }
+
+            let physical_size = font_size * scale;
             let metrics = Metrics::new(physical_size, physical_size * 1.4);
             let mut buf = Buffer::new(&mut self.font_system, metrics);
-            buf.set_text(&mut self.font_system, &label.text, Attrs::new(), glyphon::Shaping::Advanced);
+            let mut attrs = Attrs::new();
+            
+            let family_str = family_name.clone();
+            if let Some(ref family) = family_str {
+                let family_val = match family.as_str() {
+                    "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
+                    "sans-serif" => glyphon::Family::SansSerif,
+                    "serif" => glyphon::Family::Serif,
+                    _ => glyphon::Family::Name(family),
+                };
+                attrs = attrs.family(family_val);
+            }
+
+            buf.set_text(&mut self.font_system, &label.text, attrs, glyphon::Shaping::Advanced);
             buf.shape_until_scroll(&mut self.font_system, true);
             self.text_items.push(TextItem {
                 buffer: buf,
