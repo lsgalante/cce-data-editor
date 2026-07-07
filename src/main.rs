@@ -4,7 +4,7 @@ use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, Win
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
     TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
-    KeybindRecorder, MenuBar, StatusBar, Checkbox
+    KeybindRecorder, MenuBar, StatusBar, Checkbox, SplitBox
 };
 
 #[derive(Debug, Clone)]
@@ -276,8 +276,7 @@ struct DataEditorApp {
     cached_content: String,
     cached_flat_keys: Vec<(String, serde_json::Value)>,
     cached_annotations: Vec<Option<String>>,
-    tree_list_width: f32,
-    dragging_splitter: bool,
+    main_splitter: cce_ui::widget::SplitBox,
 }
 
 
@@ -512,7 +511,7 @@ impl DataEditorApp {
         labels.push((
             TextLabel {
                 text: format!("File: {}", file_name_str),
-                x: self.tree_list_width + 30.0,
+                x: self.raw_json_editor.rect().0 + 10.0,
                 y: 15.0,
                 font_size: 12.0,
                 color: [0xdd, 0xdd, 0xe2],
@@ -675,11 +674,7 @@ impl Application for DataEditorApp {
     }
 
     fn is_movable_backplate_at(&self, px: f32, py: f32) -> bool {
-        let splitter_x1 = self.tree_list_width + 10.0;
-        let splitter_x2 = self.tree_list_width + 20.0;
-        let list_top = 52.0;
-        let list_bottom = self.height as f32 - 40.0;
-        if self.dragging_splitter || (px >= splitter_x1 && px <= splitter_x2 && py >= list_top && py <= list_bottom) {
+        if self.main_splitter.dragging_idx.is_some() || self.main_splitter.hovered_idx.is_some() {
             return false;
         }
         self.ui_context.is_movable_backplate_at(px, py)
@@ -773,41 +768,42 @@ impl Application for DataEditorApp {
         let root_window = Backplate::new(0.0, 0.0, 800.0, 600.0)
             .with_movable(true);
 
-        Self {
-            root_window,
-            menubar,
-            statusbar,
-            btn_open,
-            flat_keys,
-            selected_key_idx: None,
-            tree_list,
-            selected_value_editor,
-            selected_color_editor,
-            selected_spinbox_editor,
-            selected_font_editor,
-            selected_choice_editor,
-            selected_keybind_editor,
-            selected_bool_editor,
-            selected_button_editor,
-            raw_json_editor,
-            current_file_path,
-            status_message: None,
-            width: 800,
-            height: 600,
-            scale_factor: 1.0,
-            text_items: Vec::new(),
-            font_system: cce_ui::create_font_system(),
-            needs_rebuild: true,
-            ui_context: cce_ui::context::UiContext::new(),
-            ctrl_pressed: false,
-            initial_focus: true,
-            widgets_registered: false,
-            cached_content,
-            cached_flat_keys,
-            cached_annotations,
-            tree_list_width: 380.0,
-            dragging_splitter: false,
-        }
+            let main_splitter = cce_ui::widget::SplitBox::new(cce_ui::widget::SplitDirection::Horizontal, 10.0);
+
+            Self {
+                root_window,
+                menubar,
+                statusbar,
+                btn_open,
+                flat_keys,
+                selected_key_idx: None,
+                tree_list,
+                selected_value_editor,
+                selected_color_editor,
+                selected_spinbox_editor,
+                selected_font_editor,
+                selected_choice_editor,
+                selected_keybind_editor,
+                selected_bool_editor,
+                selected_button_editor,
+                raw_json_editor,
+                current_file_path,
+                status_message: None,
+                width: 800,
+                height: 600,
+                scale_factor: 1.0,
+                text_items: Vec::new(),
+                font_system: cce_ui::create_font_system(),
+                needs_rebuild: true,
+                ui_context: cce_ui::context::UiContext::new(),
+                ctrl_pressed: false,
+                initial_focus: true,
+                widgets_registered: false,
+                cached_content,
+                cached_flat_keys,
+                cached_annotations,
+                main_splitter,
+            }
     }
 
     fn settings(&self) -> WindowSettings {
@@ -1283,12 +1279,12 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), &mut (*self_ptr).selected_button_editor as *mut Button as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.main_splitter.base().unwrap().id(), &mut (*self_ptr).main_splitter as *mut SplitBox as *mut (dyn Element + 'static));
 
                 self.root_window.add_child(self.menubar.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
 
                 self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.tree_list.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_color_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
@@ -1297,7 +1293,10 @@ impl Application for DataEditorApp {
                 self.root_window.add_child(self.selected_keybind_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_bool_editor.as_ptr_mut(), &mut self.ui_context);
                 self.root_window.add_child(self.selected_button_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.raw_json_editor.as_ptr_mut(), &mut self.ui_context);
+
+                self.main_splitter.add_child_with_proportion(self.tree_list.as_ptr_mut(), 0.49, 100.0);
+                self.main_splitter.add_child_with_proportion(self.raw_json_editor.as_ptr_mut(), 0.51, 100.0);
+                self.root_window.add_child(self.main_splitter.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
         }
@@ -1325,11 +1324,9 @@ impl Application for DataEditorApp {
             // Top bar
             self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
             
-            // Position tree_list
             let list_top = 52.0;
-            let right_h = (self.height as f32 - 92.0).max(100.0);
-            let list_height = right_h;
-            self.tree_list.set_rect(10.0, list_top, self.tree_list_width, list_height);
+            let list_height = (self.height as f32 - 92.0).max(100.0);
+            self.main_splitter.set_rect(10.0, list_top, self.width as f32 - 20.0, list_height);
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
@@ -1468,10 +1465,7 @@ impl Application for DataEditorApp {
                 self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
-            let right_x = self.tree_list_width + 20.0;
-            let right_w = (self.width as f32 - self.tree_list_width - 30.0).max(100.0);
-            let right_h = (self.height as f32 - 92.0).max(100.0);
-            self.raw_json_editor.set_rect(right_x, 52.0, right_w, right_h);
+
             
             self.rebuild_text_items();
             self.ui_context.rebuild_spatial_grid();
@@ -1540,12 +1534,8 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
-        if self.dragging_splitter {
-            let new_width = (px - 15.0).clamp(100.0, self.width as f32 - 150.0);
-            if (self.tree_list_width - new_width).abs() > 0.1 {
-                self.tree_list_width = new_width;
-                changed = true;
-            }
+        if self.main_splitter.on_cursor_moved(px, py, &mut self.ui_context) {
+            changed = true;
         }
 
         if cce_ui::widget::context_menu::is_visible() {
@@ -1580,24 +1570,10 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
-        if button == MouseButton::Left {
-            if state == ElementState::Pressed {
-                let splitter_x1 = self.tree_list_width + 10.0;
-                let splitter_x2 = self.tree_list_width + 20.0;
-                let list_top = 52.0;
-                let list_bottom = self.height as f32 - 40.0;
-                if px >= splitter_x1 && px <= splitter_x2 && py >= list_top && py <= list_bottom {
-                    self.dragging_splitter = true;
-                    return None;
-                }
-            } else if state == ElementState::Released {
-                if self.dragging_splitter {
-                    self.dragging_splitter = false;
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
-                    return None;
-                }
-            }
+        if self.main_splitter.mouse_input(button, state, px, py, &mut self.ui_context) {
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+            return None;
         }
 
         if cce_ui::widget::context_menu::is_visible() {
@@ -1877,7 +1853,8 @@ impl Application for DataEditorApp {
                 }
             }
         } else if !editor_handled && button == MouseButton::Left && state == ElementState::Pressed {
-            let in_raw = px >= self.tree_list_width + 20.0 && px <= self.width as f32 - 10.0 && py >= 52.0 && py <= self.height as f32 - 40.0;
+            let (rx, ry, rw, rh) = self.raw_json_editor.rect();
+            let in_raw = px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
             
             if !in_raw {
                 self.raw_json_editor.unfocus();
@@ -2139,7 +2116,7 @@ mod tests {
 
     #[test]
     fn test_kdl_roundtrip() {
-        let content = std::fs::read_to_string("/home/lsgalante/.config/cce/config.kdl").unwrap();
+        let content = std::fs::read_to_string(cce_ui::config::get_config_path()).unwrap();
         let val = cce_ui::config::parse_kdl_to_json(&content);
         let mut flat = Vec::new();
         flatten_json(&val, "", &mut flat);
@@ -2167,7 +2144,7 @@ mod tests {
 
     #[test]
     fn test_kdl_span_lookup() {
-        let content = std::fs::read_to_string("/home/lsgalante/.config/cce/config.kdl").unwrap();
+        let content = std::fs::read_to_string(cce_ui::config::get_config_path()).unwrap();
         let val = cce_ui::config::parse_kdl_to_json(&content);
         let mut flat = Vec::new();
         flatten_json(&val, "", &mut flat);
