@@ -1326,7 +1326,22 @@ impl Application for DataEditorApp {
             
             let list_top = 52.0;
             let list_height = (self.height as f32 - 92.0).max(100.0);
-            self.main_splitter.set_rect(10.0, list_top, self.width as f32 - 20.0, list_height);
+            // Phase 2b: lay out the two-pane splitter via the scene layout engine instead of
+            // SplitBox::set_rect. The engine reproduces the proportional split (grow weights =
+            // proportions, gap = divider width); the panes are opaque leaves that lay out their
+            // own internals. See cce-ui scene::bridge.
+            let splitter_ptr: *mut (dyn cce_ui::widget::Element + 'static) =
+                &mut self.main_splitter as *mut _;
+            cce_ui::scene::bridge::layout_subtree(
+                &self.ui_context,
+                splitter_ptr,
+                cce_ui::scene::layout::Rect {
+                    x: 10.0,
+                    y: list_top,
+                    width: self.width as f32 - 20.0,
+                    height: list_height,
+                },
+            );
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
