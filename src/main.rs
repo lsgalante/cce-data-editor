@@ -1522,8 +1522,8 @@ impl Application for DataEditorApp {
     }
 
     fn display_list(&mut self) -> Option<cce_ui::scene::paint::DisplayList> {
-        // Opt-in A/B for the Phase 3 single paint path (CCE_PAINT_WALK). Off by default.
-        if std::env::var("CCE_PAINT_WALK").is_err() {
+        // Phase 3: render via the single paint path by default. Set CCE_LEGACY_PAINT to fall back.
+        if std::env::var("CCE_LEGACY_PAINT").is_ok() {
             return None;
         }
         let root: *mut (dyn cce_ui::widget::Element + 'static) = self.root_window.as_ptr_mut();
