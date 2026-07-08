@@ -261,7 +261,7 @@ struct DataEditorApp {
 
     // UI state
     root_window: Backplate,
-    menubar: MenuBar,
+    menubar: cce_ui::widget::Adapted<MenuBar>,
     statusbar: StatusBar,
     width: u32,
     height: u32,
@@ -530,7 +530,7 @@ impl DataEditorApp {
             self.statusbar.set_text_color([0.51, 0.51, 0.54, 1.0]);
         }
         self.statusbar.prepare_text(&mut self.font_system);
-        self.menubar.prepare_text(&mut self.font_system);
+        cce_ui::widget::Element::prepare_text(&mut self.menubar, &mut self.font_system);
 
         // 5. Add Textbox / Element contents to text_items
         Self::add_element_labels(
@@ -1277,7 +1277,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.menubar.base().unwrap().id(), &mut (*self_ptr).menubar as *mut MenuBar as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.main_splitter.base().unwrap().id(), &mut (*self_ptr).main_splitter as *mut SplitBox as *mut (dyn Element + 'static));
 
