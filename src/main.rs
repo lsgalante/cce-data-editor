@@ -1521,6 +1521,15 @@ impl Application for DataEditorApp {
         quads.extend(self.root_window.all_rounded_quads(&self.ui_context));
     }
 
+    fn display_list(&mut self) -> Option<cce_ui::scene::paint::DisplayList> {
+        // Opt-in A/B for the Phase 3 single paint path (CCE_PAINT_WALK). Off by default.
+        if std::env::var("CCE_PAINT_WALK").is_err() {
+            return None;
+        }
+        let root: *mut (dyn cce_ui::widget::Element + 'static) = self.root_window.as_ptr_mut();
+        Some(cce_ui::scene::painter::paint_tree(&self.ui_context, root))
+    }
+
     fn text_items(&self) -> &[TextItem] {
         &self.text_items
     }
