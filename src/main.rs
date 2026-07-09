@@ -262,7 +262,7 @@ struct DataEditorApp {
     // UI state
     root_window: Backplate,
     menubar: cce_ui::widget::Adapted<MenuBar>,
-    statusbar: StatusBar,
+    statusbar: cce_ui::widget::Adapted<StatusBar>,
     width: u32,
     height: u32,
     scale_factor: f64,
@@ -1278,7 +1278,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
-                self.ui_context.register_widget(self.statusbar.base().unwrap().id(), &mut (*self_ptr).statusbar as *mut StatusBar as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.statusbar.base().unwrap().id(), (*self_ptr).statusbar.as_ptr_mut());
                 self.ui_context.register_widget(self.main_splitter.base().unwrap().id(), &mut (*self_ptr).main_splitter as *mut SplitBox as *mut (dyn Element + 'static));
 
                 self.root_window.add_child(self.menubar.as_ptr_mut(), &mut self.ui_context);
