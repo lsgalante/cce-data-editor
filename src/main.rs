@@ -3,7 +3,7 @@ use glyphon::FontSystem;
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, Element,
-    TextBox, Button, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
+    TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
     KeybindRecorder, MenuBar, StatusBar, Checkbox, SplitBox
 };
 
@@ -260,7 +260,6 @@ struct DataEditorApp {
     status_message: Option<(String, bool)>,
 
     // UI state
-    root_window: Backplate,
     menubar: cce_ui::widget::Adapted<MenuBar>,
     statusbar: cce_ui::widget::Adapted<StatusBar>,
     width: u32,
@@ -482,7 +481,9 @@ impl Application for DataEditorApp {
         if self.main_splitter.dragging_idx.is_some() || self.main_splitter.hovered_idx.is_some() {
             return false;
         }
-        self.ui_context.is_movable_backplate_at(px, py)
+        // Root Backplate dissolved: the surface itself is the movable plate; drag anywhere a
+        // drag-blocking widget isn't.
+        self.ui_context.drag_allowed_at(px, py)
     }
 
     fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
@@ -570,13 +571,9 @@ impl Application for DataEditorApp {
             .with_bg_color([0.08, 0.08, 0.10, 1.0])
             .with_text_offset_x(15.0);
 
-        let root_window = Backplate::new(0.0, 0.0, 800.0, 600.0)
-            .with_movable(true);
-
             let main_splitter = cce_ui::widget::SplitBox::new(cce_ui::widget::SplitDirection::Horizontal, 10.0);
 
             Self {
-                root_window,
                 menubar,
                 statusbar,
                 btn_open,
@@ -1073,11 +1070,14 @@ impl Application for DataEditorApp {
         // painter) serves its rows' text through the walk's bounded-getter emission.
         if !self.widgets_registered {
             self.widgets_registered = true;
+            // The root Backplate is DISSOLVED (Phase 6): top-level widgets register directly
+            // (parentless) and the window plate is emitted below as prims. The splitter still
+            // owns its two panes.
             let self_ptr = self as *mut Self;
             unsafe {
-                self.ui_context.register_widget(self.root_window.base().unwrap().id(), &mut (*self_ptr).root_window as *mut Backplate as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.btn_open.base().unwrap().id(), (*self_ptr).btn_open.as_ptr_mut());
                 self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_value_editor.base().unwrap().id(), (*self_ptr).selected_value_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
@@ -1087,24 +1087,11 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), (*self_ptr).statusbar.as_ptr_mut());
+                self.ui_context.register_widget(self.raw_json_editor.base().unwrap().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.main_splitter.base().unwrap().id(), &mut (*self_ptr).main_splitter as *mut SplitBox as *mut (dyn Element + 'static));
-
-                self.root_window.add_child(self.menubar.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.statusbar.as_ptr_mut(), &mut self.ui_context);
-
-                self.root_window.add_child(self.btn_open.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_value_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_color_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_spinbox_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_font_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_choice_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_keybind_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_bool_editor.as_ptr_mut(), &mut self.ui_context);
-                self.root_window.add_child(self.selected_button_editor.as_ptr_mut(), &mut self.ui_context);
 
                 self.main_splitter.add_child_with_proportion(self.tree_list.as_ptr_mut(), 0.49, 100.0);
                 self.main_splitter.add_child_with_proportion(self.raw_json_editor.as_ptr_mut(), 0.51, 100.0);
-                self.root_window.add_child(self.main_splitter.as_ptr_mut(), &mut self.ui_context);
             }
             self.ui_context.rebuild_spatial_grid();
         }
@@ -1122,8 +1109,6 @@ impl Application for DataEditorApp {
             self.height = size.height as u32;
             self.scale_factor = scale;
             cce_ui::scale::set_scale_factor(scale as f32);
-            
-            self.root_window.set_rect(0.0, 0.0, self.width as f32, self.height as f32);
             
             let status_y = self.height as f32 - 30.0;
             self.menubar.set_rect(0.0, 0.0, self.width as f32, 42.0);
@@ -1307,9 +1292,50 @@ impl Application for DataEditorApp {
             cce_ui::widget::popovers::register(&self.btn_open);
         }
 
-        let root: *mut (dyn cce_ui::widget::Element + 'static) = self.root_window.as_ptr_mut();
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
-        cce_ui::scene::painter::paint_root_into(&self.ui_context, root, &mut pc);
+
+        // The dissolved root Backplate's plate — its exact legacy paint: page-low background
+        // at the active backplate opacity, config corner radius (Backplate::color /
+        // corner_radius defaults; this window set no border/bevel).
+        {
+            use cce_ui::scene::layout::Rect;
+            let mut plate_color = cce_ui::color::page_low_color();
+            if plate_color[3] > 0.001 {
+                plate_color[3] = cce_ui::color::active_backplate_opacity();
+            }
+            let rect = Rect { x: 0.0, y: 0.0, width: self.width as f32, height: self.height as f32 };
+            let radius = cce_ui::colors::backplate_corner_radius();
+            if radius > 0.1 {
+                pc.rounded_rect(rect, radius, (true, true, true, true), plate_color);
+            } else if plate_color[3] > 0.001 {
+                pc.quad(rect, plate_color);
+            }
+        }
+
+        // Top-level widgets walked in the old child order (menubar, statusbar, top bar,
+        // inline editors, splitter last).
+        {
+            let self_ptr = self as *mut Self;
+            let tops: [*mut (dyn cce_ui::widget::Element + 'static); 12] = unsafe {
+                [
+                    (*self_ptr).menubar.as_ptr_mut(),
+                    (*self_ptr).statusbar.as_ptr_mut(),
+                    (*self_ptr).btn_open.as_ptr_mut(),
+                    (*self_ptr).selected_value_editor.as_ptr_mut(),
+                    (*self_ptr).selected_color_editor.as_ptr_mut(),
+                    (*self_ptr).selected_spinbox_editor.as_ptr_mut(),
+                    (*self_ptr).selected_font_editor.as_ptr_mut(),
+                    (*self_ptr).selected_choice_editor.as_ptr_mut(),
+                    (*self_ptr).selected_keybind_editor.as_ptr_mut(),
+                    (*self_ptr).selected_bool_editor.as_ptr_mut(),
+                    (*self_ptr).selected_button_editor.as_ptr_mut(),
+                    &mut (*self_ptr).main_splitter as *mut cce_ui::widget::SplitBox as *mut (dyn cce_ui::widget::Element + 'static),
+                ]
+            };
+            for top in tops {
+                cce_ui::scene::painter::paint_root_into(&self.ui_context, top, &mut pc);
+            }
+        }
 
         // Toolbar file label — app chrome, not owned by any widget.
         let file_name_str = match &self.current_file_path {
