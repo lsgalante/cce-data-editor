@@ -243,7 +243,7 @@ struct DataEditorApp {
     tree_list: TreeList,
 
     // Edit Value input
-    selected_value_editor: TextBox,
+    selected_value_editor: cce_ui::widget::Adapted<TextBox>,
     selected_color_editor: ColorSelector,
     selected_spinbox_editor: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
     selected_font_editor: FontSelector,
@@ -253,7 +253,7 @@ struct DataEditorApp {
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 
     // Right Panel Raw Json
-    raw_json_editor: TextBox,
+    raw_json_editor: cce_ui::widget::Adapted<TextBox>,
 
     // App state
     current_file_path: Option<std::path::PathBuf>,
@@ -1304,7 +1304,7 @@ impl Application for DataEditorApp {
         if self.initial_focus {
             self.initial_focus = false;
             self.ui_context.set_focused(&mut self.raw_json_editor);
-            TextBox::focus(&mut self.raw_json_editor);
+            Element::focus(&mut self.raw_json_editor);
             self.needs_rebuild = true;
         }
         
@@ -1861,7 +1861,7 @@ impl Application for DataEditorApp {
                                 self.ui_context.set_focused(&mut self.selected_font_editor);
                             } else {
                                 self.ui_context.set_focused(&mut self.selected_value_editor);
-                                TextBox::focus(&mut self.selected_value_editor);
+                                Element::focus(&mut self.selected_value_editor);
                             }
                         } else if val.is_i64() {
                             self.ui_context.set_focused(&mut self.selected_spinbox_editor);
@@ -1869,7 +1869,7 @@ impl Application for DataEditorApp {
                             self.ui_context.set_focused(&mut self.selected_bool_editor);
                         } else {
                             self.ui_context.set_focused(&mut self.selected_value_editor);
-                            TextBox::focus(&mut self.selected_value_editor);
+                            Element::focus(&mut self.selected_value_editor);
                         }
                         self.sync_preview_selection();
                         changed = true;
