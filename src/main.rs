@@ -235,7 +235,7 @@ fn unflatten_json(flat: &[(String, serde_json::Value)]) -> serde_json::Value {
 
 struct DataEditorApp {
     // Toolbar Buttons
-    btn_open: Dropdown,
+    btn_open: cce_ui::widget::Adapted<Dropdown>,
 
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
@@ -247,7 +247,7 @@ struct DataEditorApp {
     selected_color_editor: ColorSelector,
     selected_spinbox_editor: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
     selected_font_editor: FontSelector,
-    selected_choice_editor: Dropdown,
+    selected_choice_editor: cce_ui::widget::Adapted<Dropdown>,
     selected_keybind_editor: KeybindRecorder,
     selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
@@ -1268,12 +1268,12 @@ impl Application for DataEditorApp {
             let self_ptr = self as *mut Self;
             unsafe {
                 self.ui_context.register_widget(self.root_window.base().unwrap().id(), &mut (*self_ptr).root_window as *mut Backplate as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), &mut (*self_ptr).btn_open as *mut Dropdown as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), (*self_ptr).btn_open.as_ptr_mut());
                 self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
-                self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), &mut (*self_ptr).selected_choice_editor as *mut Dropdown as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), (*self_ptr).selected_choice_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
