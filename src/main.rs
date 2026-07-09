@@ -1521,7 +1521,7 @@ impl Application for DataEditorApp {
         quads.extend(self.root_window.all_rounded_quads(&self.ui_context));
     }
 
-    fn display_list(&mut self) -> Option<cce_ui::scene::paint::DisplayList> {
+    fn display_list(&mut self, _size: cce_ui::engine::LogicalSize, _scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
         // Phase 3: render via the single paint path by default. Set CCE_LEGACY_PAINT to fall back.
         if std::env::var("CCE_LEGACY_PAINT").is_ok() {
             return None;
