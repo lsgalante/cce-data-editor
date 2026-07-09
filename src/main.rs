@@ -1,9 +1,9 @@
 use wayland_client::QueueHandle;
-use glyphon::{FontSystem, Buffer, Metrics, Attrs};
+use glyphon::FontSystem;
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
-    MouseButton, ElementState, MouseScrollDelta, KeyEvent, TextItem, Element,
-    TextBox, Button, TextLabel, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
+    MouseButton, ElementState, MouseScrollDelta, KeyEvent, Element,
+    TextBox, Button, Key, Backplate, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
     KeybindRecorder, MenuBar, StatusBar, Checkbox, SplitBox
 };
 
@@ -266,7 +266,8 @@ struct DataEditorApp {
     width: u32,
     height: u32,
     scale_factor: f64,
-    text_items: Vec<TextItem>,
+    // Shapes glyph advances (prepare_text) for the editors — load-bearing for cursor↔pixel
+    // mapping; all rendered text is display-list prims shaped by the engine.
     font_system: FontSystem,
     needs_rebuild: bool,
     ui_context: cce_ui::context::UiContext,
@@ -440,86 +441,18 @@ impl DataEditorApp {
         }
     }
 
-    fn add_element_labels(
-        element: &dyn Element,
-        ui_context: &cce_ui::context::UiContext,
-        font_system: &mut FontSystem,
-        text_items: &mut Vec<TextItem>,
-        scale: f32,
-    ) {
-        for (label, font_family, bounds) in element.text_labels_with_font_and_bounds(ui_context) {
-            let mut font_size = label.font_size;
-            let mut family_name = None;
-            if let Some(ref font_str) = font_family {
-                let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
-                if let Some(ps) = parsed_size {
-                    font_size = ps;
-                }
-                family_name = Some(parsed_family);
-            }
-
-            let physical_size = font_size * scale;
-            let metrics = Metrics::new(physical_size, physical_size * 1.4);
-            let mut buf = Buffer::new(font_system, metrics);
-            let mut attrs = Attrs::new();
-            
-            // Keep family_str alive for the whole iteration so Family::Name(&family) borrow is valid
-            let family_str = family_name.clone();
-            if let Some(ref family) = family_str {
-                let family_val = match family.as_str() {
-                    "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
-                    "sans-serif" => glyphon::Family::SansSerif,
-                    "serif" => glyphon::Family::Serif,
-                    _ => glyphon::Family::Name(family),
-                };
-                attrs = attrs.family(family_val);
-            }
-            buf.set_text(font_system, &label.text, attrs, glyphon::Shaping::Advanced);
-            buf.shape_until_scroll(font_system, true);
-            text_items.push(TextItem {
-                buffer: buf,
-                x: label.x,
-                y: label.y,
-                color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
-                bounds,
-            });
-        }
-    }
-
-    fn rebuild_text_items(&mut self) {
+    /// The pre-frame widget-state refresh — everything `rebuild_text_items` did EXCEPT
+    /// building TextItems (all rendered text is display-list prims now: widget text from the
+    /// paint walk, the toolbar file label from `display_list` directly).
+    fn refresh_widget_text(&mut self) {
         self.rebuild_tree();
+        // Glyph-advance shaping — load-bearing for cursor↔pixel mapping in the editors.
         self.raw_json_editor.prepare_text(&mut self.font_system);
         self.selected_value_editor.prepare_text(&mut self.font_system);
         self.selected_keybind_editor.prepare_text(&mut self.font_system);
         self.tree_list.prepare_text(&mut self.font_system);
-        self.text_items.clear();
-        let scale = cce_ui::scale::scale_factor();
-        let mut labels: Vec<(TextLabel, Option<String>)> = Vec::new();
 
-        // 1. Button labels
-        // (Moved to step 5 to use add_element_labels for proper font support)
-
-        // 2. Section labels
-
-
-
-        // 3. File path info in toolbar
-        let file_name_str = match &self.current_file_path {
-            Some(path) => path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
-            None => "Untitled".to_string(),
-        };
-        labels.push((
-            TextLabel {
-                text: format!("File: {}", file_name_str),
-                x: self.raw_json_editor.rect().0 + 10.0,
-                y: 15.0,
-                font_size: 12.0,
-                color: [0xdd, 0xdd, 0xe2],
-            },
-            Some(cce_ui::layout::menubar_font()),
-        ));
-
-        // 4. Status Bar indicators
+        // Status Bar indicators
         if let Some((msg, is_error)) = &self.status_message {
             let color = if *is_error { [0.98, 0.32, 0.32, 1.0] } else { [0.25, 0.75, 0.34, 1.0] };
             self.statusbar.set_text(msg);
@@ -531,134 +464,6 @@ impl DataEditorApp {
         }
         self.statusbar.prepare_text(&mut self.font_system);
         cce_ui::widget::Element::prepare_text(&mut self.menubar, &mut self.font_system);
-
-        // 5. Add Textbox / Element contents to text_items
-        Self::add_element_labels(
-            &self.btn_open,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.statusbar,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.raw_json_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_value_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_color_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_spinbox_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_font_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_choice_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-
-        Self::add_element_labels(
-            &self.selected_keybind_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_bool_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-        Self::add_element_labels(
-            &self.selected_button_editor,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
-
-        // 6. Build static text items
-        for (label, font_family) in labels {
-            let mut font_size = label.font_size;
-            let mut family_name = None;
-            if let Some(ref font_str) = font_family {
-                let (parsed_family, parsed_size) = cce_ui::layout::parse_font_string(font_str);
-                if let Some(ps) = parsed_size {
-                    font_size = ps;
-                }
-                family_name = Some(parsed_family);
-            }
-
-            let physical_size = font_size * scale;
-            let metrics = Metrics::new(physical_size, physical_size * 1.4);
-            let mut buf = Buffer::new(&mut self.font_system, metrics);
-            let mut attrs = Attrs::new();
-            
-            let family_str = family_name.clone();
-            if let Some(ref family) = family_str {
-                let family_val = match family.as_str() {
-                    "monospace" => glyphon::Family::Name(cce_ui::layout::get_system_monospace_font()),
-                    "sans-serif" => glyphon::Family::SansSerif,
-                    "serif" => glyphon::Family::Serif,
-                    _ => glyphon::Family::Name(family),
-                };
-                attrs = attrs.family(family_val);
-            }
-
-            buf.set_text(&mut self.font_system, &label.text, attrs, glyphon::Shaping::Advanced);
-            buf.shape_until_scroll(&mut self.font_system, true);
-            self.text_items.push(TextItem {
-                buffer: buf,
-                x: label.x,
-                y: label.y,
-                color: glyphon::Color::rgb(label.color[0], label.color[1], label.color[2]),
-                bounds: None,
-            });
-        }
-
-        // 7. Left List rows text with clip bounds via TreeList
-        Self::add_element_labels(
-            &self.tree_list,
-            &self.ui_context,
-            &mut self.font_system,
-            &mut self.text_items,
-            scale,
-        );
     }
 }
 
@@ -792,7 +597,6 @@ impl Application for DataEditorApp {
                 width: 800,
                 height: 600,
                 scale_factor: 1.0,
-                text_items: Vec::new(),
                 font_system: cce_ui::create_font_system(),
                 needs_rebuild: true,
                 ui_context: cce_ui::context::UiContext::new(),
@@ -1262,7 +1066,11 @@ impl Application for DataEditorApp {
         }
     }
 
-    fn view(&mut self, quads: &mut Vec<(f32, f32, f32, f32, [f32; 4])>, size: LogicalSize, scale: f64) {
+    fn display_list(&mut self, size: LogicalSize, scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
+        // Phase 6 single paint path: setup/relayout (the old view() body), then the whole
+        // frame — the Backplate tree walked into one list plus the toolbar file label — is
+        // built here. Widget text comes from the paint walk; TreeList (a legacy subtree
+        // painter) serves its rows' text through the walk's bounded-getter emission.
         if !self.widgets_registered {
             self.widgets_registered = true;
             let self_ptr = self as *mut Self;
@@ -1482,22 +1290,12 @@ impl Application for DataEditorApp {
             
 
             
-            self.rebuild_text_items();
+            self.refresh_widget_text();
             self.ui_context.rebuild_spatial_grid();
             self.needs_rebuild = false;
         }
 
-        // 2. Toolbar Header
-        quads.push((0.0, 42.0, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
-
-        // 3. Status Bar
-        let status_y = self.height as f32 - 30.0;
-        quads.push((0.0, status_y, self.width as f32, 1.0, [0.18, 0.18, 0.22, 1.0]));
-
-        // 5. Collect all quads recursively from Backplate
-        quads.extend(self.root_window.all_quads(&self.ui_context));
-
-        // 6. Popovers registration (since this app bypasses the layout engine)
+        // Popovers registration (since this app bypasses the layout engine)
         self.ui_context.clear_popovers();
         cce_ui::widget::popovers::clear();
         if self.selected_choice_editor.popover_rect().is_some() {
@@ -1508,30 +1306,31 @@ impl Application for DataEditorApp {
             self.ui_context.register_popover(&self.btn_open);
             cce_ui::widget::popovers::register(&self.btn_open);
         }
-    }
 
-    fn view_rounded_quads(&mut self, quads: &mut Vec<(f32, f32, f32, f32, f32, [f32; 4], (bool, bool, bool, bool))>, size: LogicalSize, scale: f64) {
-        if self.width != size.width as u32 || self.height != size.height as u32 || self.scale_factor != scale {
-            self.width = size.width as u32;
-            self.height = size.height as u32;
-            self.scale_factor = scale;
-            cce_ui::scale::set_scale_factor(scale as f32);
-            self.needs_rebuild = true;
-        }
-        quads.extend(self.root_window.all_rounded_quads(&self.ui_context));
-    }
-
-    fn display_list(&mut self, _size: cce_ui::engine::LogicalSize, _scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
-        // Phase 3: render via the single paint path by default. Set CCE_LEGACY_PAINT to fall back.
-        if std::env::var("CCE_LEGACY_PAINT").is_ok() {
-            return None;
-        }
         let root: *mut (dyn cce_ui::widget::Element + 'static) = self.root_window.as_ptr_mut();
-        Some(cce_ui::scene::painter::paint_tree(&self.ui_context, root))
+        let mut pc = cce_ui::scene::paint::PaintCtx::new();
+        cce_ui::scene::painter::paint_root_into(&self.ui_context, root, &mut pc);
+
+        // Toolbar file label — app chrome, not owned by any widget.
+        let file_name_str = match &self.current_file_path {
+            Some(path) => path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            None => "Untitled".to_string(),
+        };
+        pc.text_with(
+            format!("File: {}", file_name_str),
+            self.raw_json_editor.rect().0 + 10.0,
+            15.0,
+            12.0,
+            [0xdd, 0xdd, 0xe2],
+            Some(cce_ui::layout::menubar_font()),
+            None,
+        );
+
+        Some(pc.finish())
     }
 
-    fn text_items(&self) -> &[TextItem] {
-        &self.text_items
+    fn display_list_text(&self) -> bool {
+        true
     }
 
     fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
