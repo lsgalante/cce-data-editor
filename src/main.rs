@@ -266,15 +266,6 @@ impl SplitPane {
         self.frac * (self.w - self.gap).max(0.0)
     }
 
-    fn left_rect(&self) -> (f32, f32, f32, f32) {
-        (self.x, self.y, self.left_w(), self.h)
-    }
-
-    fn right_rect(&self) -> (f32, f32, f32, f32) {
-        let lx = self.x + self.left_w() + self.gap;
-        (lx, self.y, (self.x + self.w - lx).max(0.0), self.h)
-    }
-
     fn divider_rect(&self) -> (f32, f32, f32, f32) {
         (self.x + self.left_w(), self.y, self.gap, self.h)
     }
@@ -1204,23 +1195,62 @@ impl Application for DataEditorApp {
             self.scale_factor = scale;
             cce_ui::scale::set_scale_factor(scale as f32);
             
-            let status_y = self.height as f32 - 30.0;
-            self.menubar.set_rect(0.0, 0.0, self.width as f32, 42.0);
-            self.statusbar.set_rect(0.0, status_y, self.width as f32, 30.0);
-            
-            // Top bar
-            self.btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
-            
-            let list_top = 52.0;
-            let list_height = (self.height as f32 - 92.0).max(100.0);
-            // SplitBox DISSOLVED (Phase 6aa): the split is app state; the two panes are
-            // positioned directly and walked as separate roots.
-            self.split.set_rect(10.0, list_top, self.width as f32 - 20.0, list_height);
+            // Layout via the scene solver (Phase 6ac): the frame is a stretched column
+            // [menubar (fixed 42, padded 10/8, holding the File-menu leaf), content row
+            // (grow, padded 10, gap = the divider width, panes growing by the SplitPane
+            // fractions), statusbar (fixed 30)]. Solves to the exact 6aa hand rects; the
+            // SplitPane keeps the divider drag/hover state and its rect derives from the
+            // solved panes. The inline value editors stay hand-positioned below — they
+            // float over tree rows, not a static tree.
             {
-                let (lx, ly, lw, lh) = self.split.left_rect();
-                self.tree_list.set_rect(lx, ly, lw, lh);
-                let (rx, ry, rw, rh) = self.split.right_rect();
-                self.raw_json_editor.set_rect(rx, ry, rw, rh);
+                use cce_ui::scene::arena::Arena;
+                use cce_ui::scene::layout::{
+                    compute_layout, CrossAlign, Edges, LayoutBox, Length, Size as LSize, Style,
+                };
+                let mut arena: Arena<LayoutBox> = Arena::new();
+                let root = arena.insert(LayoutBox::container(
+                    Style::column().cross_align(CrossAlign::Stretch),
+                ));
+                let top_bar = arena.insert(LayoutBox::container({
+                    let mut s = Style::row().height(Length::Fixed(42.0));
+                    s.padding = Edges { left: 10.0, right: 10.0, top: 8.0, bottom: 8.0 };
+                    s
+                }));
+                let menu_leaf = arena.insert(LayoutBox::leaf(Style::row(), LSize::new(70.0, 26.0)));
+                let content = arena.insert(LayoutBox::container({
+                    let mut s = Style::row()
+                        .grow(1.0)
+                        .padding(10.0)
+                        .gap(self.split.gap)
+                        .cross_align(CrossAlign::Stretch);
+                    s.min_height = 120.0;
+                    s
+                }));
+                let tree_pane = arena.insert(LayoutBox::container(Style::column().grow(self.split.frac)));
+                let editor_pane = arena.insert(LayoutBox::container(Style::column().grow(1.0 - self.split.frac)));
+                let status = arena.insert(LayoutBox::container(
+                    Style::column().height(Length::Fixed(30.0)),
+                ));
+                arena.append_child(root, top_bar);
+                arena.append_child(top_bar, menu_leaf);
+                arena.append_child(root, content);
+                arena.append_child(content, tree_pane);
+                arena.append_child(content, editor_pane);
+                arena.append_child(root, status);
+                compute_layout(&mut arena, root, LSize::new(self.width as f32, self.height as f32));
+
+                let tb = arena.value(top_bar).unwrap().rect;
+                self.menubar.set_rect(tb.x, tb.y, tb.width, tb.height);
+                let mb = arena.value(menu_leaf).unwrap().rect;
+                self.btn_open.set_rect(mb.x, mb.y, mb.width, mb.height);
+                let tr = arena.value(tree_pane).unwrap().rect;
+                self.tree_list.set_rect(tr.x, tr.y, tr.width, tr.height);
+                let er = arena.value(editor_pane).unwrap().rect;
+                self.raw_json_editor.set_rect(er.x, er.y, er.width, er.height);
+                let st = arena.value(status).unwrap().rect;
+                self.statusbar.set_rect(st.x, st.y, st.width, st.height);
+                // The divider's hit/drag frame spans both panes (same fractions, same math).
+                self.split.set_rect(tr.x, tr.y, (er.x + er.width) - tr.x, tr.height);
             }
 
             // Position the selected value editor inline inside the list if visible
@@ -1522,18 +1552,21 @@ impl Application for DataEditorApp {
                 changed = true;
             }
         } else {
-            if self.btn_open.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_value_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_color_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_spinbox_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_font_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_choice_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_keybind_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_bool_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.selected_button_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
-            if self.raw_json_editor.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            // Routed dispatch (Phase 6ac): one PointerMove through the router per root
+            // (hover bookkeeping, Enter/Leave synthesis, drag forwarding).
+            let ev = cce_ui::widget::Event::PointerMove { x: px, y: py, local_x: px, local_y: py };
+            if self.ui_context.propagate_event(&ev, self.btn_open.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_value_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_color_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_spinbox_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_font_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_choice_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_keybind_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_bool_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_button_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.raw_json_editor.as_ptr_mut()) { changed = true; }
 
-            if self.tree_list.on_cursor_moved(px, py, &mut self.ui_context) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.tree_list.as_ptr_mut()) { changed = true; }
         }
 
         if changed {
@@ -1548,6 +1581,11 @@ impl Application for DataEditorApp {
         let mut msg_out = None;
         let px = pos.x as f32;
         let py = pos.y as f32;
+
+        // Routed dispatch (Phase 6ac): one MouseButton event through the router per
+        // root — presses are hit-gated per widget, releases delivered everywhere, drag
+        // targets recorded; the interleaved take_* plumbing below is unchanged.
+        let mouse_ev = cce_ui::widget::Event::MouseButton { button, state, x: px, y: py, local_x: px, local_y: py };
 
         // The dissolved splitter's divider: a left press grabs it (stealing keyboard
         // focus like the legacy ctx.set_focused_ptr / clear_focus pair did), a release
@@ -1587,7 +1625,7 @@ impl Application for DataEditorApp {
             return None;
         }
 
-        if self.btn_open.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.btn_open.as_ptr_mut()) {
             changed = true;
             if self.btn_open.take_change() {
                 let selected_idx = self.btn_open.selected;
@@ -1628,35 +1666,35 @@ impl Application for DataEditorApp {
             }
         }
         let mut editor_handled = false;
-        if self.selected_value_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_value_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_color_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_color_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_spinbox_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_spinbox_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_font_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_font_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_choice_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_choice_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_keybind_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_keybind_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_bool_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_bool_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
         }
-        if self.selected_button_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
             if state == ElementState::Released && self.selected_button_editor.take_click() {
@@ -1697,7 +1735,7 @@ impl Application for DataEditorApp {
                 }
             }
         }
-        if self.raw_json_editor.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&mouse_ev, self.raw_json_editor.as_ptr_mut()) {
             changed = true;
             editor_handled = true;
 
@@ -1749,7 +1787,7 @@ impl Application for DataEditorApp {
             }
         }
 
-        if !editor_handled && self.tree_list.mouse_input(button, state, px, py, &mut self.ui_context) {
+        if !editor_handled && self.ui_context.propagate_event(&mouse_ev, self.tree_list.as_ptr_mut()) {
             changed = true;
             if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
                 self.rename_key_path(&old_path, &new_path);
@@ -1871,27 +1909,29 @@ impl Application for DataEditorApp {
     fn handle_mouse_wheel(&mut self, delta: &MouseScrollDelta, pos: LogicalPosition, needs_rebuild: &mut bool) {
         let px = pos.x as f32;
         let py = pos.y as f32;
-        if self.tree_list.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        // Routed dispatch (Phase 6ac): hit-scoped per root, like the legacy direct calls.
+        let wheel_ev = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: px, y: py, local_x: px, local_y: py };
+        if self.ui_context.propagate_event(&wheel_ev, self.tree_list.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.selected_color_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_color_editor.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.selected_spinbox_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_spinbox_editor.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.selected_font_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_font_editor.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.selected_choice_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_choice_editor.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.raw_json_editor.mouse_wheel(delta, px, py, &mut self.ui_context) {
+        if self.ui_context.propagate_event(&wheel_ev, self.raw_json_editor.as_ptr_mut()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -1970,16 +2010,36 @@ impl Application for DataEditorApp {
             }
         }
 
+        // Routed dispatch (Phase 6ac). The router delivers KeyInput to the ctx-focused
+        // widget FIRST on every call, so the legacy anything-goes chain would deliver a
+        // typed key to the focused widget once per call site — the chain short-circuits
+        // on first handled now (at most one widget is focused/editing at a time; the
+        // legacy non-else chain relied on exactly that). Plumbing that used to key off
+        // WHICH call returned true is gated on widget state instead: Enter applies the
+        // value when the value editor was editing when the key arrived, no matter which
+        // call site's propagate consumed it.
+        let value_was_editing = self.selected_value_editor.editing;
         if !handled {
-            if self.tree_list.keyboard_input(event, &mut self.ui_context) {
-                handled = true;
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
+            let key_ev = cce_ui::widget::Event::KeyInput(event.clone());
+            let roots: [*mut (dyn Element + 'static); 10] = [
+                self.tree_list.as_ptr_mut(),
+                self.btn_open.as_ptr_mut(),
+                self.raw_json_editor.as_ptr_mut(),
+                self.selected_value_editor.as_ptr_mut(),
+                self.selected_color_editor.as_ptr_mut(),
+                self.selected_spinbox_editor.as_ptr_mut(),
+                self.selected_font_editor.as_ptr_mut(),
+                self.selected_choice_editor.as_ptr_mut(),
+                self.selected_keybind_editor.as_ptr_mut(),
+                self.selected_bool_editor.as_ptr_mut(),
+            ];
+            for root in roots {
+                if self.ui_context.propagate_event(&key_ev, root) {
+                    handled = true;
+                    break;
+                }
             }
-        }
-        if !handled {
-            if self.btn_open.keyboard_input(event, &mut self.ui_context) {
-                handled = true;
+            if handled {
                 if self.btn_open.take_change() {
                     let selected_idx = self.btn_open.selected;
                     if selected_idx < self.btn_open.options.len() {
@@ -1997,19 +2057,13 @@ impl Application for DataEditorApp {
                         }
                     }
                 }
-            }
-            if self.raw_json_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.selected_value_editor.keyboard_input(event, &mut self.ui_context) {
-                handled = true;
-                if event.state == ElementState::Pressed && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter) {
+                if value_was_editing
+                    && event.state == ElementState::Pressed
+                    && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter)
+                {
                     msg_out = Some(AppMessage::ApplyValue);
                 }
             }
-            if self.selected_color_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.selected_spinbox_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.selected_font_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.selected_choice_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
-            if self.selected_keybind_editor.keyboard_input(event, &mut self.ui_context) { handled = true; }
         }
 
         if handled {
