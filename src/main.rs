@@ -1280,16 +1280,16 @@ impl Application for DataEditorApp {
             self.needs_rebuild = false;
         }
 
-        // Popovers registration (since this app bypasses the layout engine)
+        // Popover registration — ui_context ONLY (drives the engine's dl-text occlusion
+        // clamp). The popovers and the context menu draw into this display list below;
+        // the global registry fed the engine's render-only xdg popup, no longer used.
         self.ui_context.clear_popovers();
         cce_ui::widget::popovers::clear();
         if self.selected_choice_editor.popover_rect().is_some() {
             self.ui_context.register_popover(&self.selected_choice_editor);
-            cce_ui::widget::popovers::register(&self.selected_choice_editor);
         }
         if self.btn_open.popover_rect().is_some() {
             self.ui_context.register_popover(&self.btn_open);
-            cce_ui::widget::popovers::register(&self.btn_open);
         }
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
@@ -1352,30 +1352,59 @@ impl Application for DataEditorApp {
             None,
         );
 
+        // Popovers + the global context menu — geometry and labels last, on top of
+        // everything, exactly where they hit-test (the engine xdg popup is gone). Labels
+        // carry bounds equal to their overlay rect: clips them to the plate and exempts
+        // them from the dl-text occlusion clamp (the is-overlay-text convention).
+        {
+            use cce_ui::scene::layout::Rect;
+            for popover_ptr in &self.ui_context.active_popovers {
+                let popover = unsafe { &**popover_ptr };
+                let Some((px, py, pw, ph)) = popover.popover_rect() else { continue };
+                let mut coll = cce_ui::layout::PopoverCollector::new();
+                popover.render_popover(&mut coll);
+                for &(c, x, y, qw, qh) in &coll.rects {
+                    pc.quad(Rect { x, y, width: qw, height: qh }, c);
+                }
+                let pop_bounds = Some([px, py, px + pw, py + ph]);
+                for (content, size, tx, ty, color, font, _bounds) in coll.texts {
+                    let color_u8 = [
+                        (color[0] * 255.0).clamp(0.0, 255.0) as u8,
+                        (color[1] * 255.0).clamp(0.0, 255.0) as u8,
+                        (color[2] * 255.0).clamp(0.0, 255.0) as u8,
+                    ];
+                    pc.text_with(content, tx, ty, size, color_u8, font, pop_bounds);
+                }
+            }
+            if cce_ui::widget::context_menu::is_visible() {
+                let menu_bounds = Some([
+                    cce_ui::widget::context_menu::x(),
+                    cce_ui::widget::context_menu::y(),
+                    cce_ui::widget::context_menu::x() + cce_ui::widget::context_menu::w(),
+                    cce_ui::widget::context_menu::y() + cce_ui::widget::context_menu::h(),
+                ]);
+                for (qx, qy, qw, qh, qc) in cce_ui::widget::context_menu::extra_quads() {
+                    pc.quad(Rect { x: qx, y: qy, width: qw, height: qh }, qc);
+                }
+                for label in cce_ui::widget::context_menu::text_labels() {
+                    pc.text_with(
+                        label.text.clone(),
+                        label.x,
+                        label.y,
+                        label.font_size,
+                        label.color,
+                        None,
+                        menu_bounds,
+                    );
+                }
+            }
+        }
+
         Some(pc.finish())
     }
 
     fn display_list_text(&self) -> bool {
         true
-    }
-
-    fn render_popovers(&self, pc: &mut dyn cce_ui::layout::RenderTarget) {
-        cce_ui::layout::render_popovers(pc, &self.ui_context);
-
-        if cce_ui::widget::context_menu::is_visible() {
-            for (qx, qy, qw, qh, qc) in cce_ui::widget::context_menu::extra_quads() {
-                pc.rect(qc, qx, qy, qw, qh);
-            }
-            for label in cce_ui::widget::context_menu::text_labels() {
-                let color_f32 = [
-                    label.color[0] as f32 / 255.0,
-                    label.color[1] as f32 / 255.0,
-                    label.color[2] as f32 / 255.0,
-                    1.0,
-                ];
-                pc.text(&label.text, label.x, label.y, label.font_size, color_f32);
-            }
-        }
     }
 
     fn handle_pointer_move(&mut self, pos: LogicalPosition, needs_rebuild: &mut bool) {
