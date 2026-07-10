@@ -1401,7 +1401,6 @@ impl Application for DataEditorApp {
         // clamp). The popovers and the context menu draw into this display list below;
         // the global registry fed the engine's render-only xdg popup, no longer used.
         self.ui_context.clear_popovers();
-        cce_ui::widget::popovers::clear();
         if self.selected_choice_editor.popover_rect().is_some() {
             self.ui_context.register_popover(&self.selected_choice_editor);
         }
