@@ -4,7 +4,7 @@ use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, Win
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, Element,
     TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
-    KeybindRecorder, MenuBar, StatusBar, Checkbox, SplitBox
+    KeybindRecorder, MenuBar, StatusBar, Checkbox
 };
 
 #[derive(Debug, Clone)]
@@ -233,6 +233,104 @@ fn unflatten_json(flat: &[(String, serde_json::Value)]) -> serde_json::Value {
 }
 
 
+/// App-owned two-pane horizontal split replacing the dissolved `SplitBox`
+/// (Phase 6aa; the 6y recipe): divider quad, hover tint, and the proportion drag —
+/// `SplitBox`'s two-child horizontal math verbatim. The panes (tree list, raw editor)
+/// are positioned directly from the pane rects and walked as separate roots.
+struct SplitPane {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    frac: f32,
+    min_left: f32,
+    min_right: f32,
+    gap: f32,
+    dragging: bool,
+    hovered: bool,
+}
+
+impl SplitPane {
+    fn new(frac: f32, min_left: f32, min_right: f32, gap: f32) -> Self {
+        Self { x: 0.0, y: 0.0, w: 0.0, h: 0.0, frac, min_left, min_right, gap, dragging: false, hovered: false }
+    }
+
+    fn set_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
+        self.x = x;
+        self.y = y;
+        self.w = w;
+        self.h = h;
+    }
+
+    fn left_w(&self) -> f32 {
+        self.frac * (self.w - self.gap).max(0.0)
+    }
+
+    fn left_rect(&self) -> (f32, f32, f32, f32) {
+        (self.x, self.y, self.left_w(), self.h)
+    }
+
+    fn right_rect(&self) -> (f32, f32, f32, f32) {
+        let lx = self.x + self.left_w() + self.gap;
+        (lx, self.y, (self.x + self.w - lx).max(0.0), self.h)
+    }
+
+    fn divider_rect(&self) -> (f32, f32, f32, f32) {
+        (self.x + self.left_w(), self.y, self.gap, self.h)
+    }
+
+    fn hit_divider(&self, px: f32, py: f32) -> bool {
+        let (sx, sy, sw, sh) = self.divider_rect();
+        px >= sx && px <= sx + sw && py >= sy && py <= sy + sh
+    }
+
+    fn cursor_moved(&mut self, px: f32, py: f32) -> bool {
+        let mut handled = false;
+        if self.dragging {
+            let combined = (self.w - self.gap).max(0.0);
+            if combined > 0.1 {
+                let new_left = (px - self.x - self.gap / 2.0)
+                    .clamp(self.min_left, (combined - self.min_right).max(self.min_left));
+                let new_frac = new_left / combined;
+                if (new_frac - self.frac).abs() > 0.0001 {
+                    self.frac = new_frac;
+                    handled = true;
+                }
+            }
+        }
+        let new_hovered = !self.dragging && self.hit_divider(px, py);
+        if new_hovered != self.hovered {
+            self.hovered = new_hovered;
+            handled = true;
+        }
+        handled
+    }
+
+    fn press(&mut self, px: f32, py: f32) -> bool {
+        if self.hit_divider(px, py) {
+            self.dragging = true;
+            return true;
+        }
+        false
+    }
+
+    fn release(&mut self) -> bool {
+        std::mem::take(&mut self.dragging)
+    }
+
+    /// `SplitBox::extra_quads`: accent while dragging, tint on hover, hairline otherwise.
+    fn divider_quad(&self) -> (f32, f32, f32, f32, [f32; 4]) {
+        let (sx, sy, sw, sh) = self.divider_rect();
+        if self.dragging {
+            (sx + sw / 2.0 - 1.0, sy, 2.0, sh, [0.36, 0.56, 0.38, 0.8])
+        } else if self.hovered {
+            (sx + sw / 2.0 - 1.0, sy, 2.0, sh, [0.25, 0.25, 0.32, 0.6])
+        } else {
+            (sx + sw / 2.0 - 0.5, sy, 1.0, sh, [0.15, 0.15, 0.18, 0.4])
+        }
+    }
+}
+
 struct DataEditorApp {
     // Toolbar Buttons
     btn_open: cce_ui::widget::Adapted<Dropdown>,
@@ -276,7 +374,7 @@ struct DataEditorApp {
     cached_content: String,
     cached_flat_keys: Vec<(String, serde_json::Value)>,
     cached_annotations: Vec<Option<String>>,
-    main_splitter: cce_ui::widget::SplitBox,
+    split: SplitPane,
 }
 
 
@@ -478,7 +576,7 @@ impl Application for DataEditorApp {
     }
 
     fn is_movable_backplate_at(&self, px: f32, py: f32) -> bool {
-        if self.main_splitter.dragging_idx.is_some() || self.main_splitter.hovered_idx.is_some() {
+        if self.split.dragging || self.split.hovered {
             return false;
         }
         // Root Backplate dissolved: the surface itself is the movable plate; drag anywhere a
@@ -571,7 +669,7 @@ impl Application for DataEditorApp {
             .with_bg_color([0.08, 0.08, 0.10, 1.0])
             .with_text_offset_x(15.0);
 
-            let main_splitter = cce_ui::widget::SplitBox::new(cce_ui::widget::SplitDirection::Horizontal, 10.0);
+            let split = SplitPane::new(0.49, 100.0, 100.0, 10.0);
 
             Self {
                 menubar,
@@ -603,7 +701,7 @@ impl Application for DataEditorApp {
                 cached_content,
                 cached_flat_keys,
                 cached_annotations,
-                main_splitter,
+                split,
             }
     }
 
@@ -1088,10 +1186,6 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
                 self.ui_context.register_widget(self.statusbar.base().unwrap().id(), (*self_ptr).statusbar.as_ptr_mut());
                 self.ui_context.register_widget(self.raw_json_editor.base().unwrap().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.main_splitter.base().unwrap().id(), &mut (*self_ptr).main_splitter as *mut SplitBox as *mut (dyn Element + 'static));
-
-                self.main_splitter.add_child_with_proportion(self.tree_list.as_ptr_mut(), 0.49, 100.0);
-                self.main_splitter.add_child_with_proportion(self.raw_json_editor.as_ptr_mut(), 0.51, 100.0);
             }
             self.ui_context.rebuild_spatial_grid();
         }
@@ -1119,22 +1213,15 @@ impl Application for DataEditorApp {
             
             let list_top = 52.0;
             let list_height = (self.height as f32 - 92.0).max(100.0);
-            // Phase 2b: lay out the two-pane splitter via the scene layout engine instead of
-            // SplitBox::set_rect. The engine reproduces the proportional split (grow weights =
-            // proportions, gap = divider width); the panes are opaque leaves that lay out their
-            // own internals. See cce-ui scene::bridge.
-            let splitter_ptr: *mut (dyn cce_ui::widget::Element + 'static) =
-                &mut self.main_splitter as *mut _;
-            cce_ui::scene::bridge::layout_subtree(
-                &self.ui_context,
-                splitter_ptr,
-                cce_ui::scene::layout::Rect {
-                    x: 10.0,
-                    y: list_top,
-                    width: self.width as f32 - 20.0,
-                    height: list_height,
-                },
-            );
+            // SplitBox DISSOLVED (Phase 6aa): the split is app state; the two panes are
+            // positioned directly and walked as separate roots.
+            self.split.set_rect(10.0, list_top, self.width as f32 - 20.0, list_height);
+            {
+                let (lx, ly, lw, lh) = self.split.left_rect();
+                self.tree_list.set_rect(lx, ly, lw, lh);
+                let (rx, ry, rw, rh) = self.split.right_rect();
+                self.raw_json_editor.set_rect(rx, ry, rw, rh);
+            }
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
@@ -1313,10 +1400,11 @@ impl Application for DataEditorApp {
         }
 
         // Top-level widgets walked in the old child order (menubar, statusbar, top bar,
-        // inline editors, splitter last).
+        // inline editors, then the dissolved splitter's slot: its divider quad and the
+        // two panes walked as separate roots).
         {
             let self_ptr = self as *mut Self;
-            let tops: [*mut (dyn cce_ui::widget::Element + 'static); 12] = unsafe {
+            let tops: [*mut (dyn cce_ui::widget::Element + 'static); 11] = unsafe {
                 [
                     (*self_ptr).menubar.as_ptr_mut(),
                     (*self_ptr).statusbar.as_ptr_mut(),
@@ -1329,11 +1417,24 @@ impl Application for DataEditorApp {
                     (*self_ptr).selected_keybind_editor.as_ptr_mut(),
                     (*self_ptr).selected_bool_editor.as_ptr_mut(),
                     (*self_ptr).selected_button_editor.as_ptr_mut(),
-                    &mut (*self_ptr).main_splitter as *mut cce_ui::widget::SplitBox as *mut (dyn cce_ui::widget::Element + 'static),
                 ]
             };
             for top in tops {
                 cce_ui::scene::painter::paint_root_into(&self.ui_context, top, &mut pc);
+            }
+            {
+                use cce_ui::scene::layout::Rect;
+                let (dx, dy, dw, dh, dc) = self.split.divider_quad();
+                pc.quad(Rect { x: dx, y: dy, width: dw, height: dh }, dc);
+            }
+            unsafe {
+                let panes: [*mut (dyn cce_ui::widget::Element + 'static); 2] = [
+                    (*self_ptr).tree_list.as_ptr_mut(),
+                    (*self_ptr).raw_json_editor.as_ptr_mut(),
+                ];
+                for pane in panes {
+                    cce_ui::scene::painter::paint_root_into(&self.ui_context, pane, &mut pc);
+                }
             }
         }
 
@@ -1412,7 +1513,7 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
-        if self.main_splitter.on_cursor_moved(px, py, &mut self.ui_context) {
+        if self.split.cursor_moved(px, py) {
             changed = true;
         }
 
@@ -1448,10 +1549,22 @@ impl Application for DataEditorApp {
         let px = pos.x as f32;
         let py = pos.y as f32;
 
-        if self.main_splitter.mouse_input(button, state, px, py, &mut self.ui_context) {
-            *needs_rebuild = true;
-            self.needs_rebuild = true;
-            return None;
+        // The dissolved splitter's divider: a left press grabs it (stealing keyboard
+        // focus like the legacy ctx.set_focused_ptr / clear_focus pair did), a release
+        // ends the drag.
+        if button == MouseButton::Left {
+            if state == ElementState::Pressed {
+                if self.split.press(px, py) {
+                    self.ui_context.clear_focus();
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                    return None;
+                }
+            } else if self.split.release() {
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+                return None;
+            }
         }
 
         if cce_ui::widget::context_menu::is_visible() {
