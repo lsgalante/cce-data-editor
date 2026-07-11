@@ -337,7 +337,7 @@ struct DataEditorApp {
     selected_spinbox_editor: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
     selected_font_editor: FontSelector,
     selected_choice_editor: cce_ui::widget::Adapted<Dropdown>,
-    selected_keybind_editor: KeybindRecorder,
+    selected_keybind_editor: cce_ui::widget::Adapted<KeybindRecorder>,
     selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
 
@@ -1171,7 +1171,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), &mut (*self_ptr).selected_font_editor as *mut FontSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), (*self_ptr).selected_choice_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), &mut (*self_ptr).selected_keybind_editor as *mut KeybindRecorder as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), (*self_ptr).selected_keybind_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
