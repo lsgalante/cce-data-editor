@@ -329,7 +329,7 @@ struct DataEditorApp {
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
     selected_key_idx: Option<usize>,
-    tree_list: TreeList,
+    tree_list: cce_ui::widget::Adapted<TreeList>,
 
     // Edit Value input
     selected_value_editor: cce_ui::widget::Adapted<TextBox>,
@@ -1165,7 +1165,7 @@ impl Application for DataEditorApp {
             let self_ptr = self as *mut Self;
             unsafe {
                 self.ui_context.register_widget(self.btn_open.base().unwrap().id(), (*self_ptr).btn_open.as_ptr_mut());
-                self.ui_context.register_widget(self.tree_list.base().unwrap().id(), &mut (*self_ptr).tree_list as *mut TreeList as *mut (dyn Element + 'static));
+                self.ui_context.register_widget(self.tree_list.base().unwrap().id(), (*self_ptr).tree_list.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_value_editor.base().unwrap().id(), (*self_ptr).selected_value_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), &mut (*self_ptr).selected_color_editor as *mut ColorSelector as *mut (dyn Element + 'static));
                 self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
