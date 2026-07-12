@@ -1402,10 +1402,10 @@ impl Application for DataEditorApp {
         // the global registry fed the engine's render-only xdg popup, no longer used.
         self.ui_context.clear_popovers();
         if self.selected_choice_editor.popover_rect().is_some() {
-            self.ui_context.register_popover(&self.selected_choice_editor);
+            self.ui_context.register_popover(&mut self.selected_choice_editor);
         }
         if self.btn_open.popover_rect().is_some() {
-            self.ui_context.register_popover(&self.btn_open);
+            self.ui_context.register_popover(&mut self.btn_open);
         }
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
@@ -1488,8 +1488,9 @@ impl Application for DataEditorApp {
         // them from the dl-text occlusion clamp (the is-overlay-text convention).
         {
             use cce_ui::scene::layout::Rect;
-            for popover_ptr in &self.ui_context.active_popovers {
-                let popover = unsafe { &**popover_ptr };
+            for &pop_id in &self.ui_context.active_popovers {
+                let Some(pop_ptr) = self.ui_context.tree.get_ptr(pop_id) else { continue };
+                let popover = unsafe { &*pop_ptr };
                 let Some((px, py, pw, ph)) = popover.popover_rect() else { continue };
                 let mut coll = cce_ui::layout::PopoverCollector::new();
                 popover.render_popover(&mut coll);
@@ -1605,7 +1606,7 @@ impl Application for DataEditorApp {
         }
 
         if cce_ui::widget::context_menu::is_visible() {
-            if cce_ui::widget::context_menu::mouse_input(button, state, px, py) {
+            if cce_ui::widget::context_menu::mouse_input(button, state, px, py, Some(&mut self.ui_context)) {
                 changed = true;
             }
             if let Some(_deleted_path) = self.tree_list.take_deleted_key_path() {
