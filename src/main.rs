@@ -1164,19 +1164,19 @@ impl Application for DataEditorApp {
             // owns its two panes.
             let self_ptr = self as *mut Self;
             unsafe {
-                self.ui_context.register_widget(self.btn_open.base().unwrap().id(), (*self_ptr).btn_open.as_ptr_mut());
-                self.ui_context.register_widget(self.tree_list.base().unwrap().id(), (*self_ptr).tree_list.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_value_editor.base().unwrap().id(), (*self_ptr).selected_value_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_color_editor.base().unwrap().id(), (*self_ptr).selected_color_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_spinbox_editor.base().unwrap().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_font_editor.base().unwrap().id(), (*self_ptr).selected_font_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_choice_editor.base().unwrap().id(), (*self_ptr).selected_choice_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_keybind_editor.base().unwrap().id(), (*self_ptr).selected_keybind_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_bool_editor.base().unwrap().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_button_editor.base().unwrap().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.btn_open.base().id(), (*self_ptr).btn_open.as_ptr_mut());
+                self.ui_context.register_widget(self.tree_list.base().id(), (*self_ptr).tree_list.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_value_editor.base().id(), (*self_ptr).selected_value_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_color_editor.base().id(), (*self_ptr).selected_color_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_spinbox_editor.base().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_font_editor.base().id(), (*self_ptr).selected_font_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_choice_editor.base().id(), (*self_ptr).selected_choice_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_keybind_editor.base().id(), (*self_ptr).selected_keybind_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_bool_editor.base().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_button_editor.base().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
-                self.ui_context.register_widget(self.statusbar.base().unwrap().id(), (*self_ptr).statusbar.as_ptr_mut());
-                self.ui_context.register_widget(self.raw_json_editor.base().unwrap().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.statusbar.base().id(), (*self_ptr).statusbar.as_ptr_mut());
+                self.ui_context.register_widget(self.raw_json_editor.base().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
             }
             self.ui_context.rebuild_spatial_grid();
         }
@@ -1301,9 +1301,7 @@ impl Application for DataEditorApp {
                             serde_json::Value::String(st) => st.clone(),
                             _ => "Trigger".to_string(),
                         };
-                        if let Some(b) = self.selected_button_editor.base_mut() {
-                            b.label = Some(val_str);
-                        }
+                        self.selected_button_editor.base_mut().label = Some(val_str);
                         self.selected_button_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
