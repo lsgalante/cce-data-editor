@@ -2,7 +2,7 @@ use wayland_client::QueueHandle;
 use glyphon::FontSystem;
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
-    MouseButton, ElementState, MouseScrollDelta, KeyEvent, Element,
+    MouseButton, ElementState, MouseScrollDelta, KeyEvent, WidgetHost,
     TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
     KeybindRecorder, MenuBar, StatusBar, Checkbox
 };
@@ -551,7 +551,7 @@ impl DataEditorApp {
             self.statusbar.set_text_color([0.51, 0.51, 0.54, 1.0]);
         }
         self.statusbar.prepare_text(&mut self.font_system);
-        cce_ui::widget::Element::prepare_text(&mut self.menubar, &mut self.font_system);
+        cce_ui::widget::WidgetHost::prepare_text(&mut self.menubar, &mut self.font_system);
     }
 }
 
@@ -1184,7 +1184,7 @@ impl Application for DataEditorApp {
         if self.initial_focus {
             self.initial_focus = false;
             self.ui_context.set_focused(&mut self.raw_json_editor);
-            Element::focus(&mut self.raw_json_editor);
+            WidgetHost::focus(&mut self.raw_json_editor);
             self.needs_rebuild = true;
         }
         
@@ -1431,7 +1431,7 @@ impl Application for DataEditorApp {
         // two panes walked as separate roots).
         {
             let self_ptr = self as *mut Self;
-            let tops: [*mut (dyn cce_ui::widget::Element + 'static); 11] = unsafe {
+            let tops: [*mut (dyn cce_ui::widget::WidgetHost + 'static); 11] = unsafe {
                 [
                     (*self_ptr).menubar.as_ptr_mut(),
                     (*self_ptr).statusbar.as_ptr_mut(),
@@ -1455,7 +1455,7 @@ impl Application for DataEditorApp {
                 pc.quad(Rect { x: dx, y: dy, width: dw, height: dh }, dc);
             }
             unsafe {
-                let panes: [*mut (dyn cce_ui::widget::Element + 'static); 2] = [
+                let panes: [*mut (dyn cce_ui::widget::WidgetHost + 'static); 2] = [
                     (*self_ptr).tree_list.as_ptr_mut(),
                     (*self_ptr).raw_json_editor.as_ptr_mut(),
                 ];
@@ -1864,7 +1864,7 @@ impl Application for DataEditorApp {
                                 self.ui_context.set_focused(&mut self.selected_font_editor);
                             } else {
                                 self.ui_context.set_focused(&mut self.selected_value_editor);
-                                Element::focus(&mut self.selected_value_editor);
+                                WidgetHost::focus(&mut self.selected_value_editor);
                             }
                         } else if val.is_i64() {
                             self.ui_context.set_focused(&mut self.selected_spinbox_editor);
@@ -1872,7 +1872,7 @@ impl Application for DataEditorApp {
                             self.ui_context.set_focused(&mut self.selected_bool_editor);
                         } else {
                             self.ui_context.set_focused(&mut self.selected_value_editor);
-                            Element::focus(&mut self.selected_value_editor);
+                            WidgetHost::focus(&mut self.selected_value_editor);
                         }
                         self.sync_preview_selection();
                         changed = true;
@@ -2019,7 +2019,7 @@ impl Application for DataEditorApp {
         let value_was_editing = self.selected_value_editor.editing;
         if !handled {
             let key_ev = cce_ui::widget::Event::KeyInput(event.clone());
-            let roots: [*mut (dyn Element + 'static); 10] = [
+            let roots: [*mut (dyn WidgetHost + 'static); 10] = [
                 self.tree_list.as_ptr_mut(),
                 self.btn_open.as_ptr_mut(),
                 self.raw_json_editor.as_ptr_mut(),
