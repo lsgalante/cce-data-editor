@@ -1430,22 +1430,20 @@ impl Application for DataEditorApp {
         // inline editors, then the dissolved splitter's slot: its divider quad and the
         // two panes walked as separate roots).
         {
-            let self_ptr = self as *mut Self;
-            let tops: [*mut (dyn cce_ui::widget::WidgetHost + 'static); 11] = unsafe {
-                [
-                    (*self_ptr).menubar.as_ptr_mut(),
-                    (*self_ptr).statusbar.as_ptr_mut(),
-                    (*self_ptr).btn_open.as_ptr_mut(),
-                    (*self_ptr).selected_value_editor.as_ptr_mut(),
-                    (*self_ptr).selected_color_editor.as_ptr_mut(),
-                    (*self_ptr).selected_spinbox_editor.as_ptr_mut(),
-                    (*self_ptr).selected_font_editor.as_ptr_mut(),
-                    (*self_ptr).selected_choice_editor.as_ptr_mut(),
-                    (*self_ptr).selected_keybind_editor.as_ptr_mut(),
-                    (*self_ptr).selected_bool_editor.as_ptr_mut(),
-                    (*self_ptr).selected_button_editor.as_ptr_mut(),
-                ]
-            };
+            // The walk takes shared borrows now — no self-alias, no pointers.
+            let tops: [&dyn cce_ui::widget::WidgetHost; 11] = [
+                &self.menubar,
+                &self.statusbar,
+                &self.btn_open,
+                &self.selected_value_editor,
+                &self.selected_color_editor,
+                &self.selected_spinbox_editor,
+                &self.selected_font_editor,
+                &self.selected_choice_editor,
+                &self.selected_keybind_editor,
+                &self.selected_bool_editor,
+                &self.selected_button_editor,
+            ];
             for top in tops {
                 cce_ui::scene::painter::paint_root_into(&self.ui_context, top, &mut pc);
             }
@@ -1454,11 +1452,8 @@ impl Application for DataEditorApp {
                 let (dx, dy, dw, dh, dc) = self.split.divider_quad();
                 pc.quad(Rect { x: dx, y: dy, width: dw, height: dh }, dc);
             }
-            unsafe {
-                let panes: [*mut (dyn cce_ui::widget::WidgetHost + 'static); 2] = [
-                    (*self_ptr).tree_list.as_ptr_mut(),
-                    (*self_ptr).raw_json_editor.as_ptr_mut(),
-                ];
+            {
+                let panes: [&dyn cce_ui::widget::WidgetHost; 2] = [&self.tree_list, &self.raw_json_editor];
                 for pane in panes {
                     cce_ui::scene::painter::paint_root_into(&self.ui_context, pane, &mut pc);
                 }
