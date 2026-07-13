@@ -1553,18 +1553,18 @@ impl Application for DataEditorApp {
             // Routed dispatch (Phase 6ac): one PointerMove through the router per root
             // (hover bookkeeping, Enter/Leave synthesis, drag forwarding).
             let ev = cce_ui::widget::Event::PointerMove { x: px, y: py, local_x: px, local_y: py };
-            if self.ui_context.propagate_event(&ev, self.btn_open.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_value_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_color_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_spinbox_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_font_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_choice_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_keybind_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_bool_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.selected_button_editor.as_ptr_mut()) { changed = true; }
-            if self.ui_context.propagate_event(&ev, self.raw_json_editor.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.btn_open.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_value_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_color_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_spinbox_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_font_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_choice_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_keybind_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_bool_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_button_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.raw_json_editor.id()) { changed = true; }
 
-            if self.ui_context.propagate_event(&ev, self.tree_list.as_ptr_mut()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.tree_list.id()) { changed = true; }
         }
 
         if changed {
@@ -1623,7 +1623,7 @@ impl Application for DataEditorApp {
             return None;
         }
 
-        if self.ui_context.propagate_event(&mouse_ev, self.btn_open.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.btn_open.id()) {
             changed = true;
             if self.btn_open.take_change() {
                 let selected_idx = self.btn_open.selected;
@@ -1664,35 +1664,35 @@ impl Application for DataEditorApp {
             }
         }
         let mut editor_handled = false;
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_value_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_value_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_color_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_color_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_spinbox_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_spinbox_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_font_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_font_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_choice_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_choice_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_keybind_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_keybind_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_bool_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_bool_editor.id()) {
             changed = true;
             editor_handled = true;
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.id()) {
             changed = true;
             editor_handled = true;
             if state == ElementState::Released && self.selected_button_editor.take_click() {
@@ -1733,7 +1733,7 @@ impl Application for DataEditorApp {
                 }
             }
         }
-        if self.ui_context.propagate_event(&mouse_ev, self.raw_json_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&mouse_ev, self.raw_json_editor.id()) {
             changed = true;
             editor_handled = true;
 
@@ -1785,7 +1785,7 @@ impl Application for DataEditorApp {
             }
         }
 
-        if !editor_handled && self.ui_context.propagate_event(&mouse_ev, self.tree_list.as_ptr_mut()) {
+        if !editor_handled && self.ui_context.propagate_event(&mouse_ev, self.tree_list.id()) {
             changed = true;
             if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
                 self.rename_key_path(&old_path, &new_path);
@@ -1909,27 +1909,27 @@ impl Application for DataEditorApp {
         let py = pos.y as f32;
         // Routed dispatch (Phase 6ac): hit-scoped per root, like the legacy direct calls.
         let wheel_ev = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: px, y: py, local_x: px, local_y: py };
-        if self.ui_context.propagate_event(&wheel_ev, self.tree_list.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.tree_list.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context.propagate_event(&wheel_ev, self.selected_color_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_color_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context.propagate_event(&wheel_ev, self.selected_spinbox_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_spinbox_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context.propagate_event(&wheel_ev, self.selected_font_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_font_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context.propagate_event(&wheel_ev, self.selected_choice_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.selected_choice_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context.propagate_event(&wheel_ev, self.raw_json_editor.as_ptr_mut()) {
+        if self.ui_context.propagate_event(&wheel_ev, self.raw_json_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
@@ -2019,17 +2019,17 @@ impl Application for DataEditorApp {
         let value_was_editing = self.selected_value_editor.editing;
         if !handled {
             let key_ev = cce_ui::widget::Event::KeyInput(event.clone());
-            let roots: [*mut (dyn WidgetHost + 'static); 10] = [
-                self.tree_list.as_ptr_mut(),
-                self.btn_open.as_ptr_mut(),
-                self.raw_json_editor.as_ptr_mut(),
-                self.selected_value_editor.as_ptr_mut(),
-                self.selected_color_editor.as_ptr_mut(),
-                self.selected_spinbox_editor.as_ptr_mut(),
-                self.selected_font_editor.as_ptr_mut(),
-                self.selected_choice_editor.as_ptr_mut(),
-                self.selected_keybind_editor.as_ptr_mut(),
-                self.selected_bool_editor.as_ptr_mut(),
+            let roots: [cce_ui::widget::WidgetId; 10] = [
+                self.tree_list.id(),
+                self.btn_open.id(),
+                self.raw_json_editor.id(),
+                self.selected_value_editor.id(),
+                self.selected_color_editor.id(),
+                self.selected_spinbox_editor.id(),
+                self.selected_font_editor.id(),
+                self.selected_choice_editor.id(),
+                self.selected_keybind_editor.id(),
+                self.selected_bool_editor.id(),
             ];
             for root in roots {
                 if self.ui_context.propagate_event(&key_ev, root) {
