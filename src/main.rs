@@ -322,7 +322,30 @@ impl SplitPane {
     }
 }
 
+/// App shortcuts, resolved once at startup from input.kdl
+/// (`cce-data-editor` domain → `cce-ui` domain).
+struct DataEditorKeys {
+    open_document: String,
+    save_document: String,
+    quit: String,
+    format_json: String,
+}
+
+impl DataEditorKeys {
+    fn load() -> Self {
+        let get = cce_ui::input::app_chord;
+        Self {
+            open_document: get("open_document", "ctrl+o"),
+            save_document: get("save_document", "ctrl+s"),
+            quit: get("quit", "ctrl+q"),
+            format_json: get("format_json", "ctrl+shift+f"),
+        }
+    }
+}
+
 struct DataEditorApp {
+    keys: DataEditorKeys,
+
     // Toolbar Buttons
     btn_open: cce_ui::widget::Adapted<Dropdown>,
 
@@ -663,6 +686,7 @@ impl Application for DataEditorApp {
             let split = SplitPane::new(0.49, 100.0, 100.0, 10.0);
 
             Self {
+                keys: DataEditorKeys::load(),
                 menubar,
                 statusbar,
                 btn_open,
@@ -1962,28 +1986,27 @@ impl Application for DataEditorApp {
             }
         }
 
-        // Keyboard Shortcuts
+        // Keyboard Shortcuts (input.kdl `cce-data-editor` domain); the
+        // font-size chords stay hardcoded (+/= don't round-trip chords).
+        if !handled && event.state == ElementState::Pressed {
+            let m = |chord: &str| cce_ui::widget::match_key_shortcut(event, chord);
+            if m(&self.keys.open_document) {
+                msg_out = Some(AppMessage::OpenDocument);
+                handled = true;
+            } else if m(&self.keys.save_document) {
+                msg_out = Some(AppMessage::SaveDocument);
+                handled = true;
+            } else if m(&self.keys.quit) {
+                msg_out = Some(AppMessage::Exit);
+                handled = true;
+            } else if m(&self.keys.format_json) {
+                msg_out = Some(AppMessage::FormatJson);
+                handled = true;
+            }
+        }
         if !handled && event.ctrl && event.state == ElementState::Pressed {
             if let Key::Character(ref ch) = event.logical_key {
                 match ch.to_lowercase().as_str() {
-                    "o" => {
-                        msg_out = Some(AppMessage::OpenDocument);
-                        handled = true;
-                    }
-                    "s" => {
-                        msg_out = Some(AppMessage::SaveDocument);
-                        handled = true;
-                    }
-                    "q" => {
-                        msg_out = Some(AppMessage::Exit);
-                        handled = true;
-                    }
-                    "f" => {
-                        if event.shift {
-                            msg_out = Some(AppMessage::FormatJson);
-                            handled = true;
-                        }
-                    }
                     "=" | "+" => {
                         self.raw_json_editor.font_size = (self.raw_json_editor.font_size + 1.0).min(72.0);
                         self.selected_value_editor.font_size = (self.selected_value_editor.font_size + 1.0).min(72.0);
