@@ -682,7 +682,7 @@ impl Application for DataEditorApp {
         // read as carved into it. Supersedes the old opaque .with_color([0.08,0.08,0.12,1]).
         let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_recess(true);
         let statusbar = StatusBar::new()
-            .with_bg_color([0.08, 0.08, 0.10, 1.0])
+            .with_recess(true)
             .with_text_offset_x(15.0);
 
             let split = SplitPane::new(0.49, 100.0, 100.0, 10.0);
@@ -1446,7 +1446,11 @@ impl Application for DataEditorApp {
             let rect = Rect { x: 0.0, y: 0.0, width: self.width as f32, height: self.height as f32 };
             let radius = cce_ui::colors::backplate_corner_radius();
             if radius > 0.1 {
-                pc.rounded_rect(rect, radius, (true, true, true, true), plate_color);
+                // One glass slab: the fill plus a rolled, lit perimeter. The menubar and
+                // statusbar then sink into this surface as steps (see their with_recess),
+                // so the whole window reads as a single piece with varying depth rather
+                // than stacked opaque bars.
+                pc.plate(rect, (radius, radius, radius, radius), plate_color, cce_ui::layout::bevel_width());
             } else if plate_color[3] > 0.001 {
                 pc.quad(rect, plate_color);
             }
