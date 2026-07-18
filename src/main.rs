@@ -678,7 +678,9 @@ impl Application for DataEditorApp {
         let cached_content = raw_json_editor.text.clone();
         let cached_flat_keys = flat_keys.clone();
 
-        let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_color([0.08, 0.08, 0.12, 1.0]);
+        // Recessed: no bar background, the window backplate shows through and is shaded to
+        // read as carved into it. Supersedes the old opaque .with_color([0.08,0.08,0.12,1]).
+        let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_recess(true);
         let statusbar = StatusBar::new()
             .with_bg_color([0.08, 0.08, 0.10, 1.0])
             .with_text_offset_x(15.0);
