@@ -1450,24 +1450,13 @@ impl Application for DataEditorApp {
             }
         }
 
-        // Top-level widgets walked in the old child order (menubar, statusbar, top bar,
-        // inline editors, then the dissolved splitter's slot: its divider quad and the
-        // two panes walked as separate roots).
+        // Top-level widgets walked in the old child order (menubar, statusbar, top bar, then
+        // the dissolved splitter's slot: its divider quad and the two panes walked as
+        // separate roots), and the inline editors LAST.
         {
             // The walk takes shared borrows now — no self-alias, no pointers.
-            let tops: [&dyn cce_ui::widget::WidgetHost; 11] = [
-                &self.menubar,
-                &self.statusbar,
-                &self.btn_open,
-                &self.selected_value_editor,
-                &self.selected_color_editor,
-                &self.selected_spinbox_editor,
-                &self.selected_font_editor,
-                &self.selected_choice_editor,
-                &self.selected_keybind_editor,
-                &self.selected_bool_editor,
-                &self.selected_button_editor,
-            ];
+            let tops: [&dyn cce_ui::widget::WidgetHost; 3] =
+                [&self.menubar, &self.statusbar, &self.btn_open];
             for top in tops {
                 cce_ui::scene::painter::paint_root_into(&self.ui_context, top, &mut pc);
             }
@@ -1481,6 +1470,25 @@ impl Application for DataEditorApp {
                 for pane in panes {
                     cce_ui::scene::painter::paint_root_into(&self.ui_context, pane, &mut pc);
                 }
+            }
+            // The inline value editors float OVER the tree's rows, so they have to be
+            // painted after it: TreeList fills a background quad for every visible row,
+            // including the selected one it leaves a value-cell hole in. Painted before the
+            // tree, an editor's box, border and caret all landed under that quad — only its
+            // text survived, because the engine draws every label after all geometry. Hence
+            // "the value control has no caret".
+            let editors: [&dyn cce_ui::widget::WidgetHost; 8] = [
+                &self.selected_value_editor,
+                &self.selected_color_editor,
+                &self.selected_spinbox_editor,
+                &self.selected_font_editor,
+                &self.selected_choice_editor,
+                &self.selected_keybind_editor,
+                &self.selected_bool_editor,
+                &self.selected_button_editor,
+            ];
+            for editor in editors {
+                cce_ui::scene::painter::paint_root_into(&self.ui_context, editor, &mut pc);
             }
         }
 
