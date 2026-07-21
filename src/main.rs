@@ -1240,9 +1240,13 @@ impl Application for DataEditorApp {
                 // DE-wide plate rim padding (style.surface.backplate.padding);
                 // the pane gap is the SplitPane's, seeded from backplate_gap.
                 let plate_pad = cce_ui::layout::backplate_padding();
+                // The File dropdown nests into the window's top-left corner:
+                // equal gap to the left and top edges, so its corner_frame
+                // adjustment (below) rounds it concentric with the plate.
+                let menu_gap = 8.0;
                 let top_bar = arena.insert(LayoutBox::container({
                     let mut s = Style::row().height(Length::Fixed(42.0));
-                    s.padding = Edges { left: plate_pad, right: plate_pad, top: 8.0, bottom: 8.0 };
+                    s.padding = Edges { left: menu_gap, right: plate_pad, top: menu_gap, bottom: 42.0 - menu_gap - 26.0 };
                     s
                 }));
                 let menu_leaf = arena.insert(LayoutBox::leaf(Style::row(), LSize::new(70.0, 26.0)));
@@ -1272,6 +1276,14 @@ impl Application for DataEditorApp {
                 self.menubar.set_rect(tb.x, tb.y, tb.width, tb.height);
                 let mb = arena.value(menu_leaf).unwrap().rect;
                 self.btn_open.set_rect(mb.x, mb.y, mb.width, mb.height);
+                // Concentric with the window plate: equal left/top gaps make
+                // the corner_frame adjustment round the dropdown's top-left
+                // corner to (plate radius - gap), following the window curve.
+                self.btn_open.set_corner_frame(Some((
+                    (0.0, 0.0, self.width as f32, self.height as f32),
+                    cce_ui::colors::backplate_corner_radius(),
+                    (true, true, true, true),
+                )));
                 let tr = arena.value(tree_pane).unwrap().rect;
                 self.tree_list.set_rect(tr.x, tr.y, tr.width, tr.height);
                 let er = arena.value(editor_pane).unwrap().rect;
