@@ -685,7 +685,7 @@ impl Application for DataEditorApp {
             .with_recess(true)
             .with_text_offset_x(15.0);
 
-            let split = SplitPane::new(0.49, 100.0, 100.0, 10.0);
+            let split = SplitPane::new(0.49, 100.0, 100.0, cce_ui::layout::backplate_gap());
 
             Self {
                 keys: DataEditorKeys::load(),
@@ -1237,16 +1237,19 @@ impl Application for DataEditorApp {
                 let root = arena.insert(LayoutBox::container(
                     Style::column().cross_align(CrossAlign::Stretch),
                 ));
+                // DE-wide plate rim padding (style.surface.backplate.padding);
+                // the pane gap is the SplitPane's, seeded from backplate_gap.
+                let plate_pad = cce_ui::layout::backplate_padding();
                 let top_bar = arena.insert(LayoutBox::container({
                     let mut s = Style::row().height(Length::Fixed(42.0));
-                    s.padding = Edges { left: 10.0, right: 10.0, top: 8.0, bottom: 8.0 };
+                    s.padding = Edges { left: plate_pad, right: plate_pad, top: 8.0, bottom: 8.0 };
                     s
                 }));
                 let menu_leaf = arena.insert(LayoutBox::leaf(Style::row(), LSize::new(70.0, 26.0)));
                 let content = arena.insert(LayoutBox::container({
                     let mut s = Style::row()
                         .grow(1.0)
-                        .padding(10.0)
+                        .padding(plate_pad)
                         .gap(self.split.gap)
                         .cross_align(CrossAlign::Stretch);
                     s.min_height = 120.0;
