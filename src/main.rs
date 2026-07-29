@@ -516,6 +516,20 @@ impl DataEditorApp {
         self.rebuild_tree();
     }
 
+    /// Focus-within for the tree pane's rim: the inline value editors float over
+    /// tree rows and take ctx focus from the TreeList when a leaf is clicked, but
+    /// they are visually part of the tree pane — the rim stays lit for any of
+    /// them (and the tree's own search/rename boxes). It goes out only when focus
+    /// genuinely leaves the pane: the raw editor, the File menu, or nothing.
+    /// Called after every input dispatch (the only places focus moves).
+    fn sync_tree_focus_rim(&mut self) {
+        let ui = &self.ui_context;
+        let outside = !ui.has_focus()
+            || ui.is_focused_id(self.raw_json_editor.id())
+            || ui.is_focused_id(self.btn_open.id());
+        self.tree_list.focused = !outside;
+    }
+
     fn sync_preview_selection(&mut self) {
         if let Some(idx) = self.selected_key_idx {
             if idx < self.flat_keys.len() {
@@ -1640,6 +1654,7 @@ impl Application for DataEditorApp {
             if state == ElementState::Pressed {
                 if self.split.press(px, py) {
                     self.ui_context.clear_focus();
+                    self.sync_tree_focus_rim();
                     *needs_rebuild = true;
                     self.needs_rebuild = true;
                     return None;
@@ -1943,10 +1958,14 @@ impl Application for DataEditorApp {
                 self.selected_choice_editor.unfocus();
                 self.selected_keybind_editor.unfocus();
                 self.tree_list.unfocus();
+                // The manual unfocus sweep above leaves ctx.focused_widget stale;
+                // clear it so focus-derived state (the tree rim) sees reality.
+                self.ui_context.clear_focus();
                 changed = true;
             }
         }
 
+        self.sync_tree_focus_rim();
         if changed {
             *needs_rebuild = true;
             self.needs_rebuild = true;
@@ -2114,6 +2133,7 @@ impl Application for DataEditorApp {
             }
         }
 
+        self.sync_tree_focus_rim();
         if handled {
             *needs_rebuild = true;
             self.needs_rebuild = true;
