@@ -1786,6 +1786,9 @@ impl Application for DataEditorApp {
             editor_handled = true;
 
             if button == MouseButton::Left && state == ElementState::Pressed {
+                // TextBox handles the click without claiming ctx focus; claim it
+                // here so the tree gets FocusOut and its focus rim clears.
+                self.ui_context.set_focused(&mut self.raw_json_editor);
                 let cursor_offset = self.raw_json_editor.cursor_idx;
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
                 
