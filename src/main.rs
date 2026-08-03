@@ -911,12 +911,18 @@ impl Application for DataEditorApp {
                 if let Some(path) = &self.current_file_path {
                     match std::fs::read_to_string(path) {
                         Ok(content) => {
+                            // Selection survives the reload by key name (the
+                            // raw-reparse convention): captured before the
+                            // rebuild, re-resolved after.
+                            let selected_key = self.selected_key_idx
+                                .and_then(|idx| self.flat_keys.get(idx).map(|(k, _)| k.clone()));
+
                             self.raw_json_editor.text = content;
                             self.raw_json_editor.edit_buffer = self.raw_json_editor.text.clone();
                             self.raw_json_editor.cursor_idx = 0;
                             self.raw_json_editor.select_anchor = None;
                             self.raw_json_editor.editing = false;
-                            
+
                             self.flat_keys.clear();
                             if self.raw_json_editor.text.parse::<kdl::KdlDocument>().is_ok() {
                                 let val = cce_ui::config::parse_kdl_to_json(&self.raw_json_editor.text);
@@ -927,11 +933,33 @@ impl Application for DataEditorApp {
                                 flatten_json(&val, "", &mut self.flat_keys);
                                 self.status_message = Some(("Refreshed, but KDL is syntactically invalid".to_string(), true));
                             }
-                            
-                            self.selected_key_idx = None;
-                            self.selected_value_editor.text.clear();
-                            self.selected_value_editor.edit_buffer.clear();
-                            self.selected_value_editor.editing = false;
+
+                            self.selected_key_idx = selected_key
+                                .as_deref()
+                                .and_then(|k| self.flat_keys.iter().position(|(key, _)| key == k));
+                            if let Some(idx) = self.selected_key_idx {
+                                self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                                self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+                                self.selected_value_editor.editing = false;
+
+                                // Sync controls (the raw-reparse pattern).
+                                let val = &self.flat_keys[idx].1;
+                                if let serde_json::Value::String(s) = val {
+                                    if let Some(c) = parse_hex_color(s) {
+                                        self.selected_color_editor.color = c;
+                                    } else {
+                                        self.selected_font_editor.font_family = s.clone();
+                                    }
+                                } else if let Some(num) = val.as_i64() {
+                                    self.selected_spinbox_editor.value = num as i32;
+                                } else if let serde_json::Value::Bool(b) = val {
+                                    self.selected_bool_editor.set_checked(*b);
+                                }
+                            } else {
+                                self.selected_value_editor.text.clear();
+                                self.selected_value_editor.edit_buffer.clear();
+                                self.selected_value_editor.editing = false;
+                            }
                             self.sync_preview_selection();
                             self.note_disk_sync();
                         }
