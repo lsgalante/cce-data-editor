@@ -370,6 +370,15 @@ struct DataEditorApp {
     // App state
     current_file_path: Option<std::path::PathBuf>,
     status_message: Option<(String, bool)>,
+    // Disk-sync watch: the open file's (mtime, len) and a hash of its content
+    // as last loaded/saved. tick() polls once a second; a mismatch means
+    // another writer touched the file — auto-reload when the in-memory
+    // document still matches `disk_hash` (no local edits to lose), else flag
+    // `file_outdated` (toolbar + status indicator, cleared by Refresh/Save).
+    disk_state: Option<(std::time::SystemTime, u64)>,
+    disk_hash: u64,
+    file_outdated: bool,
+    disk_poll: f32,
 
     // UI state
     menubar: cce_ui::widget::Adapted<MenuBar>,
@@ -461,6 +470,7 @@ impl DataEditorApp {
                 self.current_file_path = Some(path.clone());
                 self.sync_preview_selection();
                 self.add_recent_file(&path);
+                self.note_disk_sync();
                 Ok(())
             }
             Err(e) => {
@@ -514,6 +524,22 @@ impl DataEditorApp {
         
         self.update_raw_from_flat();
         self.rebuild_tree();
+    }
+
+    /// Record that memory and disk agree right now — call immediately after
+    /// reading the open file or writing it. Stores the file's (mtime, len) and
+    /// the content hash the dirty check compares against.
+    fn note_disk_sync(&mut self) {
+        let content = if self.raw_json_editor.editing {
+            &self.raw_json_editor.edit_buffer
+        } else {
+            &self.raw_json_editor.text
+        };
+        self.disk_hash = hash_content(content);
+        self.disk_state = self.current_file_path.as_ref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+        self.file_outdated = false;
     }
 
     /// Focus-within for the tree pane's rim: the inline value editors float over
@@ -692,6 +718,13 @@ impl Application for DataEditorApp {
         let cached_content = raw_json_editor.text.clone();
         let cached_flat_keys = flat_keys.clone();
 
+        // Disk-sync baseline for the startup file (later loads/saves go
+        // through note_disk_sync).
+        let disk_hash = hash_content(&raw_json_editor.text);
+        let disk_state = current_file_path.as_ref()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+
         // Recessed: no bar background, the window backplate shows through and is shaded to
         // read as carved into it. Supersedes the old opaque .with_color([0.08,0.08,0.12,1]).
         let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_recess(true);
@@ -720,6 +753,10 @@ impl Application for DataEditorApp {
                 raw_json_editor,
                 current_file_path,
                 status_message: None,
+                disk_state,
+                disk_hash,
+                file_outdated: false,
+                disk_poll: 0.0,
                 width: 800,
                 height: 600,
                 scale_factor: 1.0,
@@ -798,6 +835,7 @@ impl Application for DataEditorApp {
                             }
                             self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
                             self.add_recent_file(&path);
+                            self.note_disk_sync();
                         }
                         Err(e) => {
                             self.status_message = Some((format!("Save failed: {}", e), true));
@@ -828,6 +866,7 @@ impl Application for DataEditorApp {
                                 self.current_file_path = Some(path.clone());
                                 self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
                                 self.add_recent_file(&path);
+                                self.note_disk_sync();
                             }
                             Err(e) => {
                                 self.status_message = Some((format!("Save failed: {}", e), true));
@@ -894,6 +933,7 @@ impl Application for DataEditorApp {
                             self.selected_value_editor.edit_buffer.clear();
                             self.selected_value_editor.editing = false;
                             self.sync_preview_selection();
+                            self.note_disk_sync();
                         }
                         Err(e) => {
                             self.status_message = Some((format!("Refresh failed: {}", e), true));
@@ -1001,6 +1041,41 @@ impl Application for DataEditorApp {
         if self.ui_context.tick(_dt) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
+        }
+        // Disk-sync watch: once a second, compare the open file's (mtime, len)
+        // against the recorded loaded/saved state. Another writer touched it:
+        // reload in place when the in-memory document is clean, else raise the
+        // outdated indicator and leave the local edits alone.
+        self.disk_poll += _dt;
+        if self.disk_poll >= 1.0 {
+            self.disk_poll = 0.0;
+            if let (Some(path), Some(recorded)) = (self.current_file_path.clone(), self.disk_state) {
+                let on_disk = std::fs::metadata(&path)
+                    .ok()
+                    .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+                if let Some(on_disk) = on_disk {
+                    if on_disk != recorded && !self.file_outdated {
+                        let content = if self.raw_json_editor.editing {
+                            &self.raw_json_editor.edit_buffer
+                        } else {
+                            &self.raw_json_editor.text
+                        };
+                        if hash_content(content) == self.disk_hash {
+                            let mut exit = false;
+                            self.update(AppMessage::RefreshDocument, needs_rebuild, &mut exit);
+                            self.status_message = Some(("Reloaded: file changed on disk".to_string(), false));
+                        } else {
+                            self.file_outdated = true;
+                            self.status_message = Some((
+                                "File changed on disk — unsaved edits here; Refresh discards them, Save overwrites the disk version".to_string(),
+                                true,
+                            ));
+                        }
+                        *needs_rebuild = true;
+                        self.needs_rebuild = true;
+                    }
+                }
+            }
         }
         if let Some((old_path, new_path)) = self.tree_list.take_rename_request() {
             self.rename_key_path(&old_path, &new_path);
@@ -1527,17 +1602,27 @@ impl Application for DataEditorApp {
             }
         }
 
-        // Toolbar file label — app chrome, not owned by any widget.
+        // Toolbar file label — app chrome, not owned by any widget. Outdated
+        // (changed on disk under local edits) renders in the highlight accent.
         let file_name_str = match &self.current_file_path {
             Some(path) => path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
             None => "Untitled".to_string(),
         };
+        let (file_label, file_label_color) = if self.file_outdated {
+            let hc = cce_ui::color::highlight_primary_color();
+            (
+                format!("File: {} — changed on disk", file_name_str),
+                [(hc[0] * 255.0) as u8, (hc[1] * 255.0) as u8, (hc[2] * 255.0) as u8],
+            )
+        } else {
+            (format!("File: {}", file_name_str), [0xdd, 0xdd, 0xe2])
+        };
         pc.text_with(
-            format!("File: {}", file_name_str),
+            file_label,
             self.raw_json_editor.rect().0 + 10.0,
             15.0,
             12.0,
-            [0xdd, 0xdd, 0xe2],
+            file_label_color,
             Some(cce_ui::layout::menubar_font()),
             None,
         );
@@ -2199,6 +2284,13 @@ fn match_key_shortcut(event: &KeyEvent, shortcut_str: &str) -> bool {
 
 fn format_hex_color(color: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", color[0], color[1], color[2])
+}
+
+fn hash_content(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }
 
 fn main() {
