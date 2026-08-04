@@ -352,6 +352,9 @@ struct DataEditorApp {
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
     selected_key_idx: Option<usize>,
+    /// A `--select <flat.path>` from the CLI, waiting for the first laid-out
+    /// frame (the tree's viewport height) before it can select and scroll.
+    pending_select: Option<String>,
     tree_list: cce_ui::widget::Adapted<TreeList>,
 
     // Edit Value input
@@ -575,6 +578,33 @@ impl DataEditorApp {
         self.raw_json_editor.sync_editor_state();
     }
 
+    /// Adopt the tree's selection and seed the inline value editors from the
+    /// selected key's value — the shared tail of every selection path that
+    /// goes through `TreeList::select_and_show_key` (raw-pane click sync,
+    /// `--select` deep link).
+    fn adopt_tree_selection(&mut self) {
+        self.selected_key_idx = self.tree_list.selected_key_idx;
+        if let Some(idx) = self.selected_key_idx {
+            self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+            self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
+            self.selected_value_editor.editing = false;
+
+            let val = &self.flat_keys[idx].1;
+            if let serde_json::Value::String(s) = val {
+                if let Some(c) = parse_hex_color(s) {
+                    self.selected_color_editor.color = c;
+                } else {
+                    self.selected_font_editor.font_family = s.clone();
+                }
+            } else if let Some(num) = val.as_i64() {
+                self.selected_spinbox_editor.value = num as i32;
+            } else if let serde_json::Value::Bool(b) = val {
+                self.selected_bool_editor.set_checked(*b);
+            }
+        }
+        self.sync_preview_selection();
+    }
+
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
         let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
@@ -660,12 +690,27 @@ impl Application for DataEditorApp {
         raw_json_editor.font_family = "monospace".to_string();
         raw_json_editor.font_size = 13.0;
 
-        // Auto-load argument path if passed
+        // Auto-load argument path if passed. `--select <flat.path>` deep-links
+        // to a key (or section prefix) once the first frame has laid out.
         let args: Vec<String> = std::env::args().collect();
         let mut current_file_path = None;
         let mut flat_keys = Vec::new();
-        if args.len() > 1 {
-            let path = std::path::PathBuf::from(&args[1]);
+        let mut pending_select = None;
+        let mut file_arg = None;
+        let mut i = 1;
+        while i < args.len() {
+            if args[i] == "--select" {
+                if i + 1 < args.len() {
+                    pending_select = Some(args[i + 1].clone());
+                    i += 1;
+                }
+            } else if file_arg.is_none() {
+                file_arg = Some(args[i].clone());
+            }
+            i += 1;
+        }
+        if let Some(arg) = file_arg {
+            let path = std::path::PathBuf::from(&arg);
             if path.exists() {
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     raw_json_editor.text = content;
@@ -741,6 +786,7 @@ impl Application for DataEditorApp {
                 btn_open,
                 flat_keys,
                 selected_key_idx: None,
+                pending_select,
                 tree_list,
                 selected_value_editor,
                 selected_color_editor,
@@ -1069,6 +1115,32 @@ impl Application for DataEditorApp {
         if self.ui_context.tick(_dt) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
+        }
+        // One-shot `--select` deep link. Deferred to here (not `new`) because
+        // scroll_to_selected_key needs the tree's solved viewport height, which
+        // exists only after the first frame has laid out.
+        if self.pending_select.is_some() && self.tree_list.scroll_box.viewport_h > 0.0 {
+            let sel = self.pending_select.take().unwrap();
+            // Exact key first; else treat it as a section prefix and land on
+            // the section's first key ("style.status" → its first child).
+            let key_path = if self.flat_keys.iter().any(|(k, _)| k == &sel) {
+                Some(sel.clone())
+            } else {
+                let prefix = format!("{}.", sel);
+                self.flat_keys.iter().map(|(k, _)| k).find(|k| k.starts_with(&prefix)).cloned()
+            };
+            match key_path {
+                Some(kp) if self.tree_list.select_and_show_key(&kp) => {
+                    self.adopt_tree_selection();
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                }
+                _ => {
+                    self.status_message = Some((format!("--select: key '{}' not found", sel), true));
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                }
+            }
         }
         // Disk-sync watch: once a second, compare the open file's (mtime, len)
         // against the recorded loaded/saved state. Another writer touched it:
@@ -1938,26 +2010,7 @@ impl Application for DataEditorApp {
                 
                 if let Some(key_path) = best_key {
                     if self.tree_list.select_and_show_key(&key_path) {
-                        self.selected_key_idx = self.tree_list.selected_key_idx;
-                        if let Some(idx) = self.selected_key_idx {
-                            self.selected_value_editor.text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                            self.selected_value_editor.edit_buffer = self.selected_value_editor.text.clone();
-                            self.selected_value_editor.editing = false;
-                            
-                            let val = &self.flat_keys[idx].1;
-                            if let serde_json::Value::String(s) = val {
-                                if let Some(c) = parse_hex_color(s) {
-                                    self.selected_color_editor.color = c;
-                                } else {
-                                    self.selected_font_editor.font_family = s.clone();
-                                }
-                            } else if let Some(num) = val.as_i64() {
-                                self.selected_spinbox_editor.value = num as i32;
-                            } else if let serde_json::Value::Bool(b) = val {
-                                self.selected_bool_editor.set_checked(*b);
-                            }
-                        }
-                        self.sync_preview_selection();
+                        self.adopt_tree_selection();
                         changed = true;
                     }
                 }
