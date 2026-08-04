@@ -627,7 +627,13 @@ impl DataEditorApp {
         }
         let local = format!("{home}/.local/bin/cce-bevel");
         let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-bevel".to_string() };
-        match std::process::Command::new(&cmd).spawn() {
+        let mut command = std::process::Command::new(&cmd);
+        // Target the file being edited: per-app configs get their own
+        // material instead of cce-bevel's default shared-config.kdl save.
+        if let Some(ref path) = self.current_file_path {
+            command.args(["--config", &path.to_string_lossy()]);
+        }
+        match command.spawn() {
             Ok(child) => self.bevel_child = Some(child),
             Err(e) => self.status_message = Some((format!("cce-bevel launch failed: {e}"), true)),
         }
