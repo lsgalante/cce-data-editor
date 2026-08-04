@@ -366,6 +366,11 @@ struct DataEditorApp {
     selected_keybind_editor: cce_ui::widget::Adapted<KeybindRecorder>,
     selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
+    selected_bevel_editor: cce_ui::widget::Adapted<cce_ui::widget::BevelPreview>,
+    /// A cce-bevel child spawned from the (bevel) preview: kept so a second
+    /// click refocuses it (try_wait reaps an exited one) instead of piling
+    /// up editors.
+    bevel_child: Option<std::process::Child>,
 
     // Right Panel Raw Json
     raw_json_editor: cce_ui::widget::Adapted<TextBox>,
@@ -605,6 +610,29 @@ impl DataEditorApp {
         self.sync_preview_selection();
     }
 
+    /// The (bevel) preview's click action: open the cce-bevel material
+    /// editor, or refocus the one this session already spawned. cce-bevel
+    /// saves to config.kdl itself; the disk-sync watch reloads the document
+    /// here when it does.
+    fn open_bevel_editor(&mut self) {
+        let home = std::env::var("HOME").unwrap_or_default();
+        if let Some(child) = self.bevel_child.as_mut() {
+            if matches!(child.try_wait(), Ok(None)) {
+                let ccectl = format!("{home}/.local/bin/ccectl");
+                let ccectl = if std::path::Path::new(&ccectl).exists() { ccectl } else { "ccectl".to_string() };
+                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-bevel"]).spawn();
+                return;
+            }
+            self.bevel_child = None;
+        }
+        let local = format!("{home}/.local/bin/cce-bevel");
+        let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-bevel".to_string() };
+        match std::process::Command::new(&cmd).spawn() {
+            Ok(child) => self.bevel_child = Some(child),
+            Err(e) => self.status_message = Some((format!("cce-bevel launch failed: {e}"), true)),
+        }
+    }
+
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
         let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
@@ -682,6 +710,7 @@ impl Application for DataEditorApp {
         let selected_keybind_editor = KeybindRecorder::new(String::new());
         let selected_bool_editor = Checkbox::new();
         let selected_button_editor = Button::new(0.0, 0.0, 125.0, 26.0).with_label("Send Test");
+        let selected_bevel_editor = cce_ui::widget::BevelPreview::new();
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -796,6 +825,8 @@ impl Application for DataEditorApp {
                 selected_keybind_editor,
                 selected_bool_editor,
                 selected_button_editor,
+                selected_bevel_editor,
+                bevel_child: None,
                 raw_json_editor,
                 current_file_path,
                 status_message: None,
@@ -1389,6 +1420,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_keybind_editor.base().id(), (*self_ptr).selected_keybind_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_bool_editor.base().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_bevel_editor.base().id(), (*self_ptr).selected_bevel_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
                 self.ui_context.register_widget(self.statusbar.base().id(), (*self_ptr).statusbar.as_ptr_mut());
                 self.ui_context.register_widget(self.raw_json_editor.base().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
@@ -1493,6 +1525,7 @@ impl Application for DataEditorApp {
                     let mut is_menu_type = false;
                     let mut menu_options = Vec::new();
                     let mut is_button_type = false;
+                    let mut is_bevel_type = false;
                     let mut annotation_str = None;
                     if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
                         annotation_str = Some(annotation.clone());
@@ -1502,10 +1535,30 @@ impl Application for DataEditorApp {
                             menu_options = opts_str.split(',').map(|s| s.trim().to_string()).collect();
                         } else if annotation == "button" || annotation.starts_with("button:") {
                             is_button_type = true;
+                        } else if annotation == "bevel" {
+                            is_bevel_type = true;
                         }
                     }
+                    // Parked unless the bevel branch below places it (the other
+                    // branches never show it, so one shared park suffices).
+                    self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
 
-                    if is_menu_type {
+                    if is_bevel_type {
+                        // The (bevel) preview: a mini lit cross-section of the
+                        // knob triple; clicking it opens cce-bevel.
+                        if let serde_json::Value::String(st) = val {
+                            self.selected_bevel_editor.set_knobs_str(st);
+                        }
+                        self.selected_bevel_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    } else if is_menu_type {
                         self.selected_choice_editor.options = menu_options.clone();
                         let val_str = match val {
                             serde_json::Value::String(st) => st.clone(),
@@ -1606,6 +1659,7 @@ impl Application for DataEditorApp {
                     self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1616,6 +1670,7 @@ impl Application for DataEditorApp {
                 self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
 
@@ -1687,7 +1742,7 @@ impl Application for DataEditorApp {
             // tree, an editor's box, border and caret all landed under that quad — only its
             // text survived, because the engine draws every label after all geometry. Hence
             // "the value control has no caret".
-            let editors: [&dyn cce_ui::widget::WidgetHost; 8] = [
+            let editors: [&dyn cce_ui::widget::WidgetHost; 9] = [
                 &self.selected_value_editor,
                 &self.selected_color_editor,
                 &self.selected_spinbox_editor,
@@ -1696,6 +1751,7 @@ impl Application for DataEditorApp {
                 &self.selected_keybind_editor,
                 &self.selected_bool_editor,
                 &self.selected_button_editor,
+                &self.selected_bevel_editor,
             ];
             for editor in editors {
                 cce_ui::scene::painter::paint_root_into(&self.ui_context, editor, &mut pc);
@@ -1809,6 +1865,7 @@ impl Application for DataEditorApp {
             if self.ui_context.propagate_event(&ev, self.selected_keybind_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.selected_bool_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.selected_button_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_bevel_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.raw_json_editor.id()) { changed = true; }
 
             if self.ui_context.propagate_event(&ev, self.tree_list.id()) { changed = true; }
@@ -1939,6 +1996,13 @@ impl Application for DataEditorApp {
         if self.ui_context.propagate_event(&mouse_ev, self.selected_bool_editor.id()) {
             changed = true;
             editor_handled = true;
+        }
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_bevel_editor.id()) {
+            changed = true;
+            editor_handled = true;
+            if state == ElementState::Pressed && self.selected_bevel_editor.take_click() {
+                self.open_bevel_editor();
+            }
         }
         if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.id()) {
             changed = true;

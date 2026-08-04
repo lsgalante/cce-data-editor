@@ -66,7 +66,7 @@ loads (best-effort parse) with an error in the status bar.
 
 ### Type-driven inline value editors
 
-Eight editor widgets exist permanently as fields (`selected_*_editor`); exactly one is
+Nine editor widgets exist permanently as fields (`selected_*_editor`); exactly one is
 positioned inline over the selected tree row, the rest are parked off-screen at
 `(-1000, -1000)` (the "hide" convention — there is no visibility flag). Which editor
 appears is decided in two places that must stay in agreement: the layout block in
@@ -75,7 +75,10 @@ appears is decided in two places that must stay in agreement: the layout block i
 - **KDL type annotations** in the document (read via
   `cce_ui::config::get_kdl_type_annotation`): `menu:a,b,c` → `Dropdown`,
   `button` / `button:<shell-cmd>` → `Button` (clicking spawns the command),
-  `keybind` → `KeybindRecorder`, `f64:min-max` → clamps applied values.
+  `keybind` → `KeybindRecorder`, `f64:min-max` → clamps applied values,
+  `bevel` → `BevelPreview` (a mini relief cross-section of the
+  "shoulder,base,bias" value; clicking opens `cce-bevel`, whose Save is picked
+  up by the disk-sync watch).
 - **Key-name heuristics**: `font` / `*_font` / `*.font` → `FontSelector`; keybind-ish
   names (`key`, `shortcut`, `brightness_up`, …) → `KeybindRecorder`.
 - **Value shape**: `#`-prefixed string → `ColorSelector`, bool → `Checkbox`,
