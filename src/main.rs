@@ -1767,7 +1767,7 @@ impl Application for DataEditorApp {
         // Toolbar file label — app chrome, not owned by any widget. Outdated
         // (changed on disk under local edits) renders in the highlight accent.
         let file_name_str = match &self.current_file_path {
-            Some(path) => path.file_name().unwrap_or_default().to_string_lossy().into_owned(),
+            Some(path) => path.display().to_string(),
             None => "Untitled".to_string(),
         };
         let (file_label, file_label_color) = if self.file_outdated {
