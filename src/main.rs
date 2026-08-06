@@ -18,6 +18,11 @@ enum AppMessage {
     RefreshDocument,
     ApplyValue,
     DeleteKey,
+    /// File-picker results, sent from the picker thread over the engine's
+    /// message channel — the portal dialog must not block the event loop (the
+    /// dropdown's contraction has to animate while the dialog is up).
+    OpenPicked(Option<std::path::PathBuf>),
+    SaveAsPicked(Option<std::path::PathBuf>),
 }
 
 #[derive(Debug, Clone)]
@@ -387,6 +392,10 @@ struct DataEditorApp {
     disk_hash: u64,
     file_outdated: bool,
     disk_poll: f32,
+    // File pickers run on a thread and report back over the engine's message
+    // channel (OpenPicked / SaveAsPicked) so the event loop keeps animating.
+    msg_sender: calloop::channel::Sender<AppMessage>,
+    file_dialog_open: bool,
 
     // UI state
     menubar: cce_ui::widget::Adapted<MenuBar>,
@@ -484,22 +493,6 @@ impl DataEditorApp {
             Err(e) => {
                 Err(format!("Error opening: {}", e))
             }
-        }
-    }
-
-    fn pick_file_to_open(&self) -> Result<std::path::PathBuf, String> {
-        println!("[DEBUG] pick_file_to_open: Executing XDG desktop portal file chooser");
-        match cce_ui::file_dialog::pick_file("Open KDL Document", &[("KDL Documents", &["kdl"]), ("All Files", &["*"])]) {
-            Some(path) => Ok(path),
-            None => Err("No file selected".to_string()),
-        }
-    }
-
-    fn pick_file_to_save(&self) -> Result<std::path::PathBuf, String> {
-        println!("[DEBUG] pick_file_to_save: Executing XDG desktop portal file chooser");
-        match cce_ui::file_dialog::save_file("Save KDL Document", &[("KDL Documents", &["kdl"]), ("All Files", &["*"])]) {
-            Some(path) => Ok(path),
-            None => Err("No file selected".to_string()),
         }
     }
 
@@ -702,7 +695,7 @@ impl Application for DataEditorApp {
         self.ui_context.drag_allowed_at(px, py)
     }
 
-    fn new(_qh: &QueueHandle<EngineState<Self>>, _sender: calloop::channel::Sender<Self::Message>) -> Self {
+    fn new(_qh: &QueueHandle<EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
         println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
 
 
@@ -840,6 +833,8 @@ impl Application for DataEditorApp {
                 disk_hash,
                 file_outdated: false,
                 disk_poll: 0.0,
+                msg_sender: sender,
+                file_dialog_open: false,
                 width: 800,
                 height: 600,
                 scale_factor: 1.0,
@@ -873,25 +868,32 @@ impl Application for DataEditorApp {
                 *exit = true;
             }
             AppMessage::OpenDocument => {
-                println!("[DEBUG] update: AppMessage::OpenDocument received");
-                match self.pick_file_to_open() {
-                    Ok(path) => {
-                        println!("[DEBUG] pick_file_to_open succeeded, path = {:?}", path);
-                        if let Err(e) = self.open_file_by_path(path) {
-                            self.status_message = Some((e, true));
-                        }
-                        *needs_rebuild = true;
-                        self.needs_rebuild = true;
-                    }
-                    Err(e) => {
-                        println!("[DEBUG] pick_file_to_open failed, error = {:?}", e);
-                        if e != "No file selected" {
-                            self.status_message = Some((format!("File picker error: {}", e), true));
-                            *needs_rebuild = true;
-                            self.needs_rebuild = true;
-                        }
+                // The portal dialog runs on a thread; the result arrives as
+                // OpenPicked. Blocking here would freeze the loop with the
+                // dropdown still expanded — its contraction animates while the
+                // dialog is up.
+                if self.file_dialog_open {
+                    return;
+                }
+                self.file_dialog_open = true;
+                let sender = self.msg_sender.clone();
+                std::thread::spawn(move || {
+                    let picked = cce_ui::file_dialog::pick_file(
+                        "Open KDL Document",
+                        &[("KDL Documents", &["kdl"]), ("All Files", &["*"])],
+                    );
+                    let _ = sender.send(AppMessage::OpenPicked(picked));
+                });
+            }
+            AppMessage::OpenPicked(picked) => {
+                self.file_dialog_open = false;
+                if let Some(path) = picked {
+                    if let Err(e) = self.open_file_by_path(path) {
+                        self.status_message = Some((e, true));
                     }
                 }
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
             }
             AppMessage::OpenRecent(path) => {
                 println!("[DEBUG] update: AppMessage::OpenRecent received, path = {:?}", path);
@@ -938,34 +940,50 @@ impl Application for DataEditorApp {
                     self.needs_rebuild = true;
                     return;
                 }
-                
-                match self.pick_file_to_save() {
-                    Ok(path) => {
-                        match std::fs::write(&path, content) {
-                            Ok(_) => {
-                                if self.raw_json_editor.editing {
-                                    self.raw_json_editor.text = self.raw_json_editor.edit_buffer.clone();
-                                }
-                                self.current_file_path = Some(path.clone());
-                                self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
-                                self.add_recent_file(&path);
-                                self.note_disk_sync();
-                            }
-                            Err(e) => {
-                                self.status_message = Some((format!("Save failed: {}", e), true));
-                            }
+                // Same threaded-picker shape as OpenDocument; the write happens
+                // in SaveAsPicked (content re-read and re-validated there —
+                // the document can change while the dialog is up).
+                if self.file_dialog_open {
+                    return;
+                }
+                self.file_dialog_open = true;
+                let sender = self.msg_sender.clone();
+                std::thread::spawn(move || {
+                    let picked = cce_ui::file_dialog::save_file(
+                        "Save KDL Document",
+                        &[("KDL Documents", &["kdl"]), ("All Files", &["*"])],
+                    );
+                    let _ = sender.send(AppMessage::SaveAsPicked(picked));
+                });
+            }
+            AppMessage::SaveAsPicked(picked) => {
+                self.file_dialog_open = false;
+                let Some(path) = picked else {
+                    return;
+                };
+                let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
+                if let Err(e) = content.parse::<kdl::KdlDocument>() {
+                    self.status_message = Some((format!("Cannot save: invalid KDL ({})", e), true));
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                    return;
+                }
+                match std::fs::write(&path, content) {
+                    Ok(_) => {
+                        if self.raw_json_editor.editing {
+                            self.raw_json_editor.text = self.raw_json_editor.edit_buffer.clone();
                         }
-                        *needs_rebuild = true;
-                        self.needs_rebuild = true;
+                        self.current_file_path = Some(path.clone());
+                        self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
+                        self.add_recent_file(&path);
+                        self.note_disk_sync();
                     }
                     Err(e) => {
-                        if e != "No file selected" {
-                            self.status_message = Some((format!("File picker error: {}", e), true));
-                            *needs_rebuild = true;
-                            self.needs_rebuild = true;
-                        }
+                        self.status_message = Some((format!("Save failed: {}", e), true));
                     }
                 }
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
             }
             AppMessage::FormatJson => {
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
