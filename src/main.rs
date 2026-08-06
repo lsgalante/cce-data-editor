@@ -1195,12 +1195,10 @@ impl Application for DataEditorApp {
                 if !open {
                     continue;
                 }
+                // Right/bottom rim only — a leading overhang would shift the
+                // surface origin (see Application::overflow_margin).
                 let (px, py, pw, ph) = geom;
-                need = need
-                    .max(px + pw - fw)
-                    .max(py + ph - fh)
-                    .max(-px)
-                    .max(-py);
+                need = need.max(px + pw - fw).max(py + ph - fh);
             }
             let quantized = if need > 0.0 {
                 (((need / 64.0).ceil() * 64.0) as u32).min(512)
@@ -1501,14 +1499,12 @@ impl Application for DataEditorApp {
             self.needs_rebuild = true;
         }
         
-        // Overflow-margin mode: `size` is the SURFACE (frame + rim on every
-        // side, sized to an overhanging popover). The app stays entirely in
-        // window-frame coordinates — layout against the frame, input arrives
-        // pre-translated — and only the paint output shifts, through the
-        // push_translate bracket below.
+        // Overflow-margin mode: `size` is the SURFACE (frame + right/bottom
+        // rim sized to an overhanging popover). Frame coords == surface
+        // coords; the only obligation is laying out against the frame.
         let ov = self.overflow_now as f32;
-        let frame_w = (size.width as f32 - 2.0 * ov).max(1.0);
-        let frame_h = (size.height as f32 - 2.0 * ov).max(1.0);
+        let frame_w = (size.width as f32 - ov).max(1.0);
+        let frame_h = (size.height as f32 - ov).max(1.0);
         let size_changed = self.width != frame_w as u32 || self.height != frame_h as u32 || self.scale_factor != scale;
         if self.needs_rebuild || size_changed {
             self.width = frame_w as u32;
@@ -1766,9 +1762,6 @@ impl Application for DataEditorApp {
         }
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
-        // The overflow shift: everything below is authored in frame coords;
-        // the rim exists only in the emitted prims. Popped before finish.
-        pc.push_translate(ov, ov);
 
         // The dissolved root Backplate's plate — its exact legacy paint: page-low background
         // at the active backplate opacity, config corner radius (Backplate::color /
@@ -1901,7 +1894,6 @@ impl Application for DataEditorApp {
             }
         }
 
-        pc.pop_translate();
         Some(pc.finish())
     }
 
