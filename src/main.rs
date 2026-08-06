@@ -383,6 +383,11 @@ struct DataEditorApp {
     // App state
     current_file_path: Option<std::path::PathBuf>,
     status_message: Option<(String, bool)>,
+    /// Overflow rim (engine `overflow_margin`): the popover overhang past the
+    /// window frame, quantized to 64px steps, 0 while no menu overhangs.
+    /// Recomputed in tick from the dropdowns' FULL popover geometry (the
+    /// animated box would resize the surface per frame).
+    overflow_now: u32,
     // Disk-sync watch: the open file's (mtime, len) and a hash of its content
     // as last loaded/saved. tick() polls once a second; a mismatch means
     // another writer touched the file — auto-reload when the in-memory
@@ -678,6 +683,10 @@ impl DataEditorApp {
 impl Application for DataEditorApp {
     type Message = AppMessage;
 
+    fn overflow_margin(&self) -> u32 {
+        self.overflow_now
+    }
+
     fn ui_context(&self) -> Option<&cce_ui::context::UiContext> {
         Some(&self.ui_context)
     }
@@ -829,6 +838,7 @@ impl Application for DataEditorApp {
                 raw_json_editor,
                 current_file_path,
                 status_message: None,
+                overflow_now: 0,
                 disk_state,
                 disk_hash,
                 file_outdated: false,
@@ -1171,6 +1181,38 @@ impl Application for DataEditorApp {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
+        // Overflow rim for overhanging menus: sized from the FULL popover
+        // geometry (stable per open, unlike the animated box) whenever a
+        // dropdown is open, so the menu extends past the window edge instead
+        // of clipping at the buffer. Quantized so it can't flap.
+        {
+            let mut need = 0.0f32;
+            let (fw, fh) = (self.width as f32, self.height as f32);
+            for (open, geom) in [
+                (self.btn_open.popover_rect().is_some(), self.btn_open.get_popover_geom()),
+                (self.selected_choice_editor.popover_rect().is_some(), self.selected_choice_editor.get_popover_geom()),
+            ] {
+                if !open {
+                    continue;
+                }
+                let (px, py, pw, ph) = geom;
+                need = need
+                    .max(px + pw - fw)
+                    .max(py + ph - fh)
+                    .max(-px)
+                    .max(-py);
+            }
+            let quantized = if need > 0.0 {
+                (((need / 64.0).ceil() * 64.0) as u32).min(512)
+            } else {
+                0
+            };
+            if quantized != self.overflow_now {
+                self.overflow_now = quantized;
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
         // One-shot `--select` deep link. Deferred to here (not `new`) because
         // scroll_to_selected_key needs the tree's solved viewport height, which
         // exists only after the first frame has laid out.
@@ -1459,10 +1501,18 @@ impl Application for DataEditorApp {
             self.needs_rebuild = true;
         }
         
-        let size_changed = self.width != size.width as u32 || self.height != size.height as u32 || self.scale_factor != scale;
+        // Overflow-margin mode: `size` is the SURFACE (frame + rim on every
+        // side, sized to an overhanging popover). The app stays entirely in
+        // window-frame coordinates — layout against the frame, input arrives
+        // pre-translated — and only the paint output shifts, through the
+        // push_translate bracket below.
+        let ov = self.overflow_now as f32;
+        let frame_w = (size.width as f32 - 2.0 * ov).max(1.0);
+        let frame_h = (size.height as f32 - 2.0 * ov).max(1.0);
+        let size_changed = self.width != frame_w as u32 || self.height != frame_h as u32 || self.scale_factor != scale;
         if self.needs_rebuild || size_changed {
-            self.width = size.width as u32;
-            self.height = size.height as u32;
+            self.width = frame_w as u32;
+            self.height = frame_h as u32;
             self.scale_factor = scale;
             cce_ui::scale::set_scale_factor(scale as f32);
             
@@ -1716,6 +1766,9 @@ impl Application for DataEditorApp {
         }
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
+        // The overflow shift: everything below is authored in frame coords;
+        // the rim exists only in the emitted prims. Popped before finish.
+        pc.push_translate(ov, ov);
 
         // The dissolved root Backplate's plate — its exact legacy paint: page-low background
         // at the active backplate opacity, config corner radius (Backplate::color /
@@ -1848,6 +1901,7 @@ impl Application for DataEditorApp {
             }
         }
 
+        pc.pop_translate();
         Some(pc.finish())
     }
 
