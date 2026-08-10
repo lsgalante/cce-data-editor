@@ -2433,6 +2433,26 @@ impl Application for DataEditorApp {
 
         msg_out
     }
+
+    /// Clicks outside our own surface never arrive as pointer events — the
+    /// compositor's keyboard-leave is the only "user went elsewhere" signal.
+    /// Dismiss any open dropdown menu on it (FocusOut is the widget's own
+    /// close-me event, so this rides the normal animated-close path).
+    fn handle_focus_change(&mut self, focused: bool, needs_rebuild: &mut bool) {
+        if focused {
+            return;
+        }
+        for (open, id) in [
+            (self.btn_open.popover_rect().is_some(), self.btn_open.id()),
+            (self.selected_choice_editor.popover_rect().is_some(), self.selected_choice_editor.id()),
+        ] {
+            if open {
+                self.ui_context.propagate_event(&cce_ui::widget::Event::FocusOut, id);
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+    }
 }
 
 fn parse_hex_color_rgba(s: &str) -> Option<[u8; 4]> {
