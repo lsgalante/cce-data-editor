@@ -8,9 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 GUI app for browsing and editing KDL files (primarily `~/.config/cce/config.kdl` and
 `input.kdl`). It is one crate of the multi-repo `cce` workspace — this repo is cloned
 side-by-side with its siblings and depends on `cce-ui = { path = "../cce-ui" }`, so a
-checkout of `../cce-ui` must exist to build. The workspace-level `../CLAUDE.md` (when
-present) covers the whole desktop environment; commit in THIS repo, never at the
-workspace root.
+checkout of `../cce-ui` must exist to build. The workspace-level
+`../cce-compositor/WORKSPACE.md` (when present) covers the whole desktop environment; commit
+in THIS repo, never at the workspace root.
 
 The entire app is **one file: `src/main.rs`** (~2200 lines) — a `DataEditorApp` struct
 implementing `cce_ui::engine::Application`, run by `cce_ui::engine::run::<DataEditorApp>()`.
