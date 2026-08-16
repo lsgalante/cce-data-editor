@@ -608,32 +608,36 @@ impl DataEditorApp {
         self.sync_preview_selection();
     }
 
-    /// The (bevel) preview's click action: open the cce-bevel material
-    /// editor, or refocus the one this session already spawned. cce-bevel
+    /// The (bevel) preview's click action: open the cce-relief material
+    /// editor, or refocus the one this session already spawned. cce-relief
     /// saves to config.kdl itself; the disk-sync watch reloads the document
     /// here when it does.
+    ///
+    /// The tool was `cce-bevel` until it grew a shape picker covering the whole
+    /// relief family; the `(bevel)` type annotation this hangs off is a CONFIG
+    /// key and deliberately did not change with it.
     fn open_bevel_editor(&mut self) {
         let home = std::env::var("HOME").unwrap_or_default();
         if let Some(child) = self.bevel_child.as_mut() {
             if matches!(child.try_wait(), Ok(None)) {
                 let ccectl = format!("{home}/.local/bin/ccectl");
                 let ccectl = if std::path::Path::new(&ccectl).exists() { ccectl } else { "ccectl".to_string() };
-                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-bevel"]).spawn();
+                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-relief"]).spawn();
                 return;
             }
             self.bevel_child = None;
         }
-        let local = format!("{home}/.local/bin/cce-bevel");
-        let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-bevel".to_string() };
+        let local = format!("{home}/.local/bin/cce-relief");
+        let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-relief".to_string() };
         let mut command = std::process::Command::new(&cmd);
         // Target the file being edited: per-app configs get their own
-        // material instead of cce-bevel's default shared-config.kdl save.
+        // material instead of cce-relief's default shared-config.kdl save.
         if let Some(ref path) = self.current_file_path {
             command.args(["--config", &path.to_string_lossy()]);
         }
         match command.spawn() {
             Ok(child) => self.bevel_child = Some(child),
-            Err(e) => self.status_message = Some((format!("cce-bevel launch failed: {e}"), true)),
+            Err(e) => self.status_message = Some((format!("cce-relief launch failed: {e}"), true)),
         }
     }
 
