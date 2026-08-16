@@ -372,7 +372,7 @@ struct DataEditorApp {
     selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
     selected_bevel_editor: cce_ui::widget::Adapted<cce_ui::widget::BevelPreview>,
-    /// A cce-bevel child spawned from the (bevel) preview: kept so a second
+    /// A cce-relief child spawned from the (bevel) preview: kept so a second
     /// click refocuses it (try_wait reaps an exited one) instead of piling
     /// up editors.
     bevel_child: Option<std::process::Child>,
@@ -1619,7 +1619,7 @@ impl Application for DataEditorApp {
 
                     if is_bevel_type {
                         // The (bevel) preview: a mini lit cross-section of the
-                        // knob triple; clicking it opens cce-bevel.
+                        // knob triple; clicking it opens cce-relief.
                         if let serde_json::Value::String(st) = val {
                             self.selected_bevel_editor.set_knobs_str(st);
                         }
