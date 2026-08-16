@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Data Editor
+Comment=JSON data editor for clear-ui
+Exec=cce-data-editor %F
+Icon=preferences-system
+Categories=Utility;Development;
+Terminal=false
+StartupNotify=true
+StartupWMClass=cce-data-editor
+MimeType=application/json;
