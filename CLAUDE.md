@@ -80,6 +80,12 @@ appears is decided in two places that must stay in agreement: the layout block i
   "shoulder,base,bias" value; clicking opens `cce-relief`, whose Save is picked
   up by the disk-sync watch). The annotation stays `bevel` — it is a config key,
   and did not follow the tool's rename from `cce-bevel`.
+  `relief` → the same `BevelPreview`, seeded from the `(relief)` value's `k=`
+  knob triple (`cce_ui::relief_spec::ReliefSpec`), but clicking opens
+  `cce-relief --key <flat.path>` so Save rewrites that single value instead of
+  the file's shared material. Keys NAMED `line_relief` get this treatment even
+  while their value is still a plain integer (the annotation only exists once
+  a material was saved) — same key-name-heuristic convention as fonts.
 - **Key-name heuristics**: `font` / `*_font` / `*.font` → `FontSelector`; keybind-ish
   names (`key`, `shortcut`, `brightness_up`, …) → `KeybindRecorder`.
 - **Value shape**: `#`-prefixed string → `ColorSelector`, bool → `Checkbox`,

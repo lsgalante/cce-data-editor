@@ -630,6 +630,21 @@ impl DataEditorApp {
         let local = format!("{home}/.local/bin/cce-relief");
         let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-relief".to_string() };
         let mut command = std::process::Command::new(&cmd);
+        // A relief-valued key (the (relief) annotation, or a line_relief key
+        // still in integer form) targets its own single value: cce-relief
+        // --key seeds from it and Save rewrites only it. A (bevel) key keeps
+        // editing the file's shared material.
+        let relief_key = self.selected_key_idx.and_then(|idx| {
+            let key = self.flat_keys[idx].0.clone();
+            let by_anno = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, &key)
+                .as_deref()
+                == Some("relief");
+            let by_name = key == "line_relief" || key.ends_with(".line_relief");
+            (by_anno || by_name).then_some(key)
+        });
+        if let Some(ref key) = relief_key {
+            command.args(["--key", key]);
+        }
         // Target the file being edited: per-app configs get their own
         // material instead of cce-relief's default shared-config.kdl save.
         if let Some(ref path) = self.current_file_path {
@@ -1600,6 +1615,7 @@ impl Application for DataEditorApp {
                     let mut menu_options = Vec::new();
                     let mut is_button_type = false;
                     let mut is_bevel_type = false;
+                    let mut is_relief_type = false;
                     let mut annotation_str = None;
                     if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
                         annotation_str = Some(annotation.clone());
@@ -1611,16 +1627,38 @@ impl Application for DataEditorApp {
                             is_button_type = true;
                         } else if annotation == "bevel" {
                             is_bevel_type = true;
+                        } else if annotation == "relief" {
+                            is_relief_type = true;
                         }
+                    }
+                    // line_relief keys get the relief treatment even in
+                    // integer form (the (relief) annotation only appears once
+                    // a material was saved): the preview is the affordance
+                    // that opens cce-relief --key on them — same key-name
+                    // heuristic convention as fonts and keybinds.
+                    if !is_relief_type
+                        && !is_bevel_type
+                        && (key_name == "line_relief" || key_name.ends_with(".line_relief"))
+                    {
+                        is_relief_type = true;
                     }
                     // Parked unless the bevel branch below places it (the other
                     // branches never show it, so one shared park suffices).
                     self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
 
-                    if is_bevel_type {
-                        // The (bevel) preview: a mini lit cross-section of the
-                        // knob triple; clicking it opens cce-relief.
-                        if let serde_json::Value::String(st) = val {
+                    if is_bevel_type || is_relief_type {
+                        // The (bevel)/(relief) preview: a mini lit
+                        // cross-section of the knob triple; clicking it opens
+                        // cce-relief (targeted at the KEY for a relief value).
+                        if is_relief_type {
+                            let knobs = if let serde_json::Value::String(st) = val {
+                                cce_ui::relief_spec::ReliefSpec::parse(st).and_then(|s| s.knobs)
+                            } else {
+                                None
+                            };
+                            let (a, b, c) = knobs.unwrap_or((0.5, 0.5, 0.5));
+                            self.selected_bevel_editor.set_knobs_str(&format!("{a:.3},{b:.3},{c:.3}"));
+                        } else if let serde_json::Value::String(st) = val {
                             self.selected_bevel_editor.set_knobs_str(st);
                         }
                         self.selected_bevel_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
