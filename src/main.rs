@@ -629,6 +629,25 @@ impl DataEditorApp {
         }
         let local = format!("{home}/.local/bin/cce-relief");
         let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-relief".to_string() };
+        // Ask the compositor to open the editor at this control instead of
+        // its remembered position: the pointer is on the preview right now,
+        // so its location IS the control's location. One-shot, best-effort
+        // (`place-next` consumed at the map; ignored off-cce) — the same
+        // pattern as ColorSelector's picker spawn.
+        if let Ok(reply) = cce_ui::ipc::send_command("cce", "pointer-location") {
+            let mut px = None;
+            let mut py = None;
+            for tok in reply.split_whitespace() {
+                if let Some(v) = tok.strip_prefix("x=") {
+                    px = v.parse::<f64>().ok();
+                } else if let Some(v) = tok.strip_prefix("y=") {
+                    py = v.parse::<f64>().ok();
+                }
+            }
+            if let (Some(x), Some(y)) = (px, py) {
+                let _ = cce_ui::ipc::send_command("cce", &format!("place-next cce-relief {x:.0} {y:.0}"));
+            }
+        }
         let mut command = std::process::Command::new(&cmd);
         // A relief-valued key (the (relief) annotation, or a line_relief key
         // still in integer form) targets its own single value: cce-relief
