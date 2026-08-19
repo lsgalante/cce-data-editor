@@ -59,6 +59,23 @@ fn parse_path(path: &str) -> Vec<PathToken> {
     tokens
 }
 
+/// KDL spans are byte offsets; the TextBox cursor/selection are char indices.
+/// Convert one to the other (clamping past-the-end offsets to the char count).
+fn byte_to_char_idx(content: &str, byte_idx: usize) -> usize {
+    content
+        .char_indices()
+        .take_while(|(b, _)| *b < byte_idx)
+        .count()
+}
+
+fn char_to_byte_idx(content: &str, char_idx: usize) -> usize {
+    content
+        .char_indices()
+        .nth(char_idx)
+        .map(|(b, _)| b)
+        .unwrap_or(content.len())
+}
+
 fn find_kdl_span(content: &str, tokens: &[PathToken]) -> Option<(usize, usize)> {
     let doc = content.parse::<kdl::KdlDocument>().ok()?;
     find_kdl_span_in_doc(&doc, tokens)
@@ -569,6 +586,7 @@ impl DataEditorApp {
                 let tokens = parse_path(path);
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
                 if let Some((start, end)) = find_kdl_span(content, &tokens) {
+                    let (start, end) = (byte_to_char_idx(content, start), byte_to_char_idx(content, end));
                     self.raw_json_editor.select_anchor = Some(start);
                     self.raw_json_editor.cursor_idx = end;
                     self.raw_json_editor.sync_editor_state();
@@ -2176,8 +2194,8 @@ impl Application for DataEditorApp {
                 // TextBox handles the click without claiming ctx focus; claim it
                 // here so the tree gets FocusOut and its focus rim clears.
                 self.ui_context.set_focused(&mut self.raw_json_editor);
-                let cursor_offset = self.raw_json_editor.cursor_idx;
                 let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
+                let cursor_offset = char_to_byte_idx(content, self.raw_json_editor.cursor_idx);
                 
                 let mut best_key = None;
                 let mut best_span_len = usize::MAX;
