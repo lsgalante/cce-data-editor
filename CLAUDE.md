@@ -86,6 +86,11 @@ appears is decided in two places that must stay in agreement: the layout block i
   the file's shared material. Keys NAMED `line_relief` get this treatment even
   while their value is still a plain integer (the annotation only exists once
   a material was saved) — same key-name-heuristic convention as fonts.
+  `ramp` → `RampPreview` (the spec's value curve as a polyline); clicking
+  opens `cce-ramp --key <flat.path>`, whose Save writes the spec back with
+  the `(ramp)` annotation. Ramp-named keys (`ramp` / `*_ramp`) whose string
+  value parses as a ramp spec get the treatment before the annotation exists
+  (`overview_ramp` shipped unannotated).
 - **Key-name heuristics**: `font` / `*_font` / `*.font` → `FontSelector`; keybind-ish
   names (`key`, `shortcut`, `brightness_up`, …) → `KeybindRecorder`.
 - **Value shape**: `#`-prefixed string → `ColorSelector`, bool → `Checkbox`,

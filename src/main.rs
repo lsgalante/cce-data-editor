@@ -389,10 +389,15 @@ struct DataEditorApp {
     selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
     selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
     selected_bevel_editor: cce_ui::widget::Adapted<cce_ui::widget::BevelPreview>,
+    /// The (ramp) type's inline preview — the spec's curve; clicking opens
+    /// cce-ramp --key on the selected key.
+    selected_ramp_editor: cce_ui::widget::Adapted<cce_ui::widget::RampPreview>,
     /// A cce-relief child spawned from the (bevel) preview: kept so a second
     /// click refocuses it (try_wait reaps an exited one) instead of piling
     /// up editors.
     bevel_child: Option<std::process::Child>,
+    /// Same lifecycle for the cce-ramp child of the (ramp) preview.
+    ramp_child: Option<std::process::Child>,
 
     // Right Panel Raw Json
     raw_json_editor: cce_ui::widget::Adapted<TextBox>,
@@ -693,6 +698,51 @@ impl DataEditorApp {
         }
     }
 
+    /// The (ramp) preview's click action: open cce-ramp targeted at the
+    /// selected key, or refocus the one this session already spawned —
+    /// `open_bevel_editor`'s lifecycle with cce-ramp's argv.
+    fn open_ramp_editor(&mut self) {
+        let home = std::env::var("HOME").unwrap_or_default();
+        if let Some(child) = self.ramp_child.as_mut() {
+            if matches!(child.try_wait(), Ok(None)) {
+                let ccectl = format!("{home}/.local/bin/ccectl");
+                let ccectl = if std::path::Path::new(&ccectl).exists() { ccectl } else { "ccectl".to_string() };
+                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-ramp"]).spawn();
+                return;
+            }
+            self.ramp_child = None;
+        }
+        let Some(idx) = self.selected_key_idx else { return };
+        let key = self.flat_keys[idx].0.clone();
+        let local = format!("{home}/.local/bin/cce-ramp");
+        let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-ramp".to_string() };
+        // Open at this control, not the remembered spot — the pointer is on
+        // the preview right now (see open_bevel_editor).
+        if let Ok(reply) = cce_ui::ipc::send_command("cce", "pointer-location") {
+            let mut px = None;
+            let mut py = None;
+            for tok in reply.split_whitespace() {
+                if let Some(v) = tok.strip_prefix("x=") {
+                    px = v.parse::<f64>().ok();
+                } else if let Some(v) = tok.strip_prefix("y=") {
+                    py = v.parse::<f64>().ok();
+                }
+            }
+            if let (Some(x), Some(y)) = (px, py) {
+                let _ = cce_ui::ipc::send_command("cce", &format!("place-next cce-ramp {x:.0} {y:.0}"));
+            }
+        }
+        let mut command = std::process::Command::new(&cmd);
+        command.args(["--key", &key]);
+        if let Some(ref path) = self.current_file_path {
+            command.args(["--config", &path.to_string_lossy()]);
+        }
+        match command.spawn() {
+            Ok(child) => self.ramp_child = Some(child),
+            Err(e) => self.status_message = Some((format!("cce-ramp launch failed: {e}"), true)),
+        }
+    }
+
     fn rebuild_tree(&mut self) {
         self.tree_list.selected_key_idx = self.selected_key_idx;
         let content = if self.raw_json_editor.editing { &self.raw_json_editor.edit_buffer } else { &self.raw_json_editor.text };
@@ -775,6 +825,7 @@ impl Application for DataEditorApp {
         let selected_bool_editor = Checkbox::new();
         let selected_button_editor = Button::new(0.0, 0.0, 125.0, 26.0).with_label("Send Test");
         let selected_bevel_editor = cce_ui::widget::BevelPreview::new();
+        let selected_ramp_editor = cce_ui::widget::RampPreview::new();
 
         let mut raw_json_editor = TextBox::new(String::new())
             .with_multiline(true)
@@ -890,7 +941,9 @@ impl Application for DataEditorApp {
                 selected_bool_editor,
                 selected_button_editor,
                 selected_bevel_editor,
+                selected_ramp_editor,
                 bevel_child: None,
+                ramp_child: None,
                 raw_json_editor,
                 current_file_path,
                 status_message: None,
@@ -1541,6 +1594,7 @@ impl Application for DataEditorApp {
                 self.ui_context.register_widget(self.selected_bool_editor.base().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_button_editor.base().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.selected_bevel_editor.base().id(), (*self_ptr).selected_bevel_editor.as_ptr_mut());
+                self.ui_context.register_widget(self.selected_ramp_editor.base().id(), (*self_ptr).selected_ramp_editor.as_ptr_mut());
                 self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
                 self.ui_context.register_widget(self.statusbar.base().id(), (*self_ptr).statusbar.as_ptr_mut());
                 self.ui_context.register_widget(self.raw_json_editor.base().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
@@ -1653,6 +1707,7 @@ impl Application for DataEditorApp {
                     let mut is_button_type = false;
                     let mut is_bevel_type = false;
                     let mut is_relief_type = false;
+                    let mut is_ramp_type = false;
                     let mut annotation_str = None;
                     if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.raw_json_editor.text, key_name) {
                         annotation_str = Some(annotation.clone());
@@ -1666,6 +1721,22 @@ impl Application for DataEditorApp {
                             is_bevel_type = true;
                         } else if annotation == "relief" {
                             is_relief_type = true;
+                        } else if annotation == "ramp" {
+                            is_ramp_type = true;
+                        }
+                    }
+                    // Ramp-spec strings under ramp-named keys get the ramp
+                    // treatment before the annotation exists (overview_ramp
+                    // shipped unannotated) — but only when the value actually
+                    // parses as a spec, so an unrelated *_ramp key stays a
+                    // plain string row.
+                    if !is_ramp_type
+                        && (key_name == "ramp" || key_name.ends_with("_ramp") || key_name.ends_with(".ramp"))
+                    {
+                        if let serde_json::Value::String(st) = val {
+                            if cce_ui::widget::parse_ramp_spec(st).is_some() {
+                                is_ramp_type = true;
+                            }
                         }
                     }
                     // line_relief keys get the relief treatment even in
@@ -1679,9 +1750,11 @@ impl Application for DataEditorApp {
                     {
                         is_relief_type = true;
                     }
-                    // Parked unless the bevel branch below places it (the other
-                    // branches never show it, so one shared park suffices).
+                    // Parked unless the bevel/ramp branch below places it (the
+                    // other branches never show them, so one shared park
+                    // suffices).
                     self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_ramp_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
 
                     if is_bevel_type || is_relief_type {
                         // The (bevel)/(relief) preview: a mini lit
@@ -1699,6 +1772,21 @@ impl Application for DataEditorApp {
                             self.selected_bevel_editor.set_knobs_str(st);
                         }
                         self.selected_bevel_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_keybind_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                        self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    } else if is_ramp_type {
+                        // The (ramp) preview: the spec's curve as a polyline;
+                        // clicking it opens cce-ramp --key on this key.
+                        if let serde_json::Value::String(st) = val {
+                            self.selected_ramp_editor.set_spec_str(st);
+                        }
+                        self.selected_ramp_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1809,6 +1897,7 @@ impl Application for DataEditorApp {
                     self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                     self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                    self.selected_ramp_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 }
             } else {
                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1820,6 +1909,7 @@ impl Application for DataEditorApp {
                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_button_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                 self.selected_bevel_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
+                self.selected_ramp_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
             }
             
 
@@ -1891,7 +1981,7 @@ impl Application for DataEditorApp {
             // tree, an editor's box, border and caret all landed under that quad — only its
             // text survived, because the engine draws every label after all geometry. Hence
             // "the value control has no caret".
-            let editors: [&dyn cce_ui::widget::WidgetHost; 9] = [
+            let editors: [&dyn cce_ui::widget::WidgetHost; 10] = [
                 &self.selected_value_editor,
                 &self.selected_color_editor,
                 &self.selected_spinbox_editor,
@@ -1901,6 +1991,7 @@ impl Application for DataEditorApp {
                 &self.selected_bool_editor,
                 &self.selected_button_editor,
                 &self.selected_bevel_editor,
+                &self.selected_ramp_editor,
             ];
             for editor in editors {
                 cce_ui::scene::painter::paint_root_into(&self.ui_context, editor, &mut pc);
@@ -2007,6 +2098,7 @@ impl Application for DataEditorApp {
             if self.ui_context.propagate_event(&ev, self.selected_bool_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.selected_button_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.selected_bevel_editor.id()) { changed = true; }
+            if self.ui_context.propagate_event(&ev, self.selected_ramp_editor.id()) { changed = true; }
             if self.ui_context.propagate_event(&ev, self.raw_json_editor.id()) { changed = true; }
 
             if self.ui_context.propagate_event(&ev, self.tree_list.id()) { changed = true; }
@@ -2143,6 +2235,13 @@ impl Application for DataEditorApp {
             editor_handled = true;
             if state == ElementState::Pressed && self.selected_bevel_editor.take_click() {
                 self.open_bevel_editor();
+            }
+        }
+        if self.ui_context.propagate_event(&mouse_ev, self.selected_ramp_editor.id()) {
+            changed = true;
+            editor_handled = true;
+            if state == ElementState::Pressed && self.selected_ramp_editor.take_click() {
+                self.open_ramp_editor();
             }
         }
         if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.id()) {
