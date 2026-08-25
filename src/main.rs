@@ -921,7 +921,7 @@ impl Application for DataEditorApp {
             .with_recess(true)
             .with_text_offset_x(15.0);
 
-            let split = SplitPane::new(0.49, 100.0, 100.0, cce_ui::layout::backplate_gap());
+            let split = SplitPane::new(0.49, 100.0, 100.0, cce_ui::layout::root_plate_gap());
 
             Self {
                 keys: DataEditorKeys::load(),
@@ -1640,7 +1640,7 @@ impl Application for DataEditorApp {
                 ));
                 // DE-wide plate rim padding (style.surface.backplate.padding);
                 // the pane gap is the SplitPane's, seeded from backplate_gap.
-                let plate_pad = cce_ui::layout::backplate_padding();
+                let plate_pad = cce_ui::layout::root_plate_padding();
                 // The File dropdown nests into the window's top-left corner:
                 // equal gap to the left and top edges, so its corner_frame
                 // adjustment (below) rounds it concentric with the plate.
@@ -1682,7 +1682,7 @@ impl Application for DataEditorApp {
                 // corner to (plate radius - gap), following the window curve.
                 self.btn_open.set_corner_frame(Some((
                     (0.0, 0.0, self.width as f32, self.height as f32),
-                    cce_ui::colors::backplate_corner_radius(),
+                    cce_ui::colors::root_plate_corner_radius(),
                     (true, true, true, true),
                 )));
                 let tr = arena.value(tree_pane).unwrap().rect;
@@ -1939,10 +1939,10 @@ impl Application for DataEditorApp {
             use cce_ui::scene::layout::Rect;
             let mut plate_color = cce_ui::color::page_low_color();
             if plate_color[3] > 0.001 {
-                plate_color[3] = cce_ui::color::active_backplate_opacity();
+                plate_color[3] = cce_ui::color::root_plate_opacity();
             }
             let rect = Rect { x: 0.0, y: 0.0, width: self.width as f32, height: self.height as f32 };
-            let radius = cce_ui::colors::backplate_corner_radius();
+            let radius = cce_ui::colors::root_plate_corner_radius();
             if radius > 0.1 {
                 // One glass slab: the fill plus a rolled, lit perimeter. The menubar and
                 // statusbar then sink into this surface as steps (see their with_recess),
