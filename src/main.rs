@@ -1682,7 +1682,10 @@ impl Application for DataEditorApp {
                 // corner to (plate radius - gap), following the window curve.
                 self.btn_open.set_corner_frame(Some((
                     (0.0, 0.0, self.width as f32, self.height as f32),
-                    cce_ui::colors::root_plate_corner_radius(),
+                    // The concentric nesting follows the SILHOUETTE arc the
+                    // plate now wears (cce-ui RFC 7b), not the un-spanned
+                    // nominal radius.
+                    cce_ui::layout::window_silhouette_radius(),
                     (true, true, true, true),
                 )));
                 let tr = arena.value(tree_pane).unwrap().rect;
@@ -1942,13 +1945,20 @@ impl Application for DataEditorApp {
                 plate_color[3] = cce_ui::color::root_plate_opacity();
             }
             let rect = Rect { x: 0.0, y: 0.0, width: self.width as f32, height: self.height as f32 };
-            let radius = cce_ui::colors::root_plate_corner_radius();
+            let radius = cce_ui::layout::window_silhouette_radius();
             if radius > 0.1 {
                 // One glass slab: the fill plus a rolled, lit perimeter. The menubar and
                 // statusbar then sink into this surface as steps (see their with_recess),
                 // so the whole window reads as a single piece with varying depth rather
-                // than stacked opaque bars.
-                pc.plate(rect, (radius, radius, radius, radius), plate_color, cce_ui::layout::bevel_width());
+                // than stacked opaque bars. PlateSpec (cce-ui RFC 7b): the
+                // perimeter follows the silhouette arc.
+                pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
+                    rect,
+                    color: plate_color,
+                    blur: false,
+                    window_corners: (true, true, true, true),
+                    depth: cce_ui::layout::bevel_width(),
+                });
             } else if plate_color[3] > 0.001 {
                 pc.quad(rect, plate_color);
             }
