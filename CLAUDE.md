@@ -101,12 +101,12 @@ Editor commits are polled in `tick()` via each widget's `take_change()`, all fun
 into the same mutate-`flat_keys` → `update_raw_from_flat()` → `sync_preview_selection()`
 sequence.
 
-### cce-ui "Phase 6" conventions (post-Backplate)
+### cce-ui "Phase 6" conventions (post-container)
 
 This app tracks the current cce-ui architecture; mirror these patterns when touching UI
 code, and don't reintroduce the retired ones:
 
-- **No root container.** The root `Backplate` and the `SplitBox` are dissolved.
+- **No root container.** The root plate container and the `SplitBox` are dissolved.
   Top-level widgets are parentless, registered once with
   `ui_context.register_widget(id, ptr)` in the first `display_list` call, and painted
   as separate roots via `cce_ui::scene::painter::paint_root_into` (shared borrows).

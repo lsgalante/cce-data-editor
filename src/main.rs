@@ -801,11 +801,11 @@ impl Application for DataEditorApp {
         Some(&mut self.ui_context)
     }
 
-    fn is_movable_backplate_at(&self, px: f32, py: f32) -> bool {
+    fn is_movable_root_plate_at(&self, px: f32, py: f32) -> bool {
         if self.split.dragging || self.split.hovered {
             return false;
         }
-        // Root Backplate dissolved: the surface itself is the movable plate; drag anywhere a
+        // root plate container dissolved: the surface itself is the movable plate; drag anywhere a
         // drag-blocking widget isn't.
         self.ui_context.drag_allowed_at(px, py)
     }
@@ -914,7 +914,7 @@ impl Application for DataEditorApp {
             .and_then(|p| std::fs::metadata(p).ok())
             .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
 
-        // Recessed: no bar background, the window backplate shows through and is shaded to
+        // Recessed: no bar background, the window root plate shows through and is shaded to
         // read as carved into it. Supersedes the old opaque .with_color([0.08,0.08,0.12,1]).
         let menubar = MenuBar::new(0.0, 0.0, 800.0, 42.0).with_recess(true);
         let statusbar = StatusBar::new()
@@ -1573,12 +1573,12 @@ impl Application for DataEditorApp {
 
     fn display_list(&mut self, size: LogicalSize, scale: f64) -> Option<cce_ui::scene::paint::DisplayList> {
         // Phase 6 single paint path: setup/relayout (the old view() body), then the whole
-        // frame — the Backplate tree walked into one list plus the toolbar file label — is
+        // frame — the root plate container tree walked into one list plus the toolbar file label — is
         // built here. Widget text comes from the paint walk; TreeList (a legacy subtree
         // painter) serves its rows' text through the walk's bounded-getter emission.
         if !self.widgets_registered {
             self.widgets_registered = true;
-            // The root Backplate is DISSOLVED (Phase 6): top-level widgets register directly
+            // The root plate container is DISSOLVED (Phase 6): top-level widgets register directly
             // (parentless) and the window plate is emitted below as prims. The splitter still
             // owns its two panes.
             let self_ptr = self as *mut Self;
@@ -1638,8 +1638,8 @@ impl Application for DataEditorApp {
                 let root = arena.insert(LayoutBox::container(
                     Style::column().cross_align(CrossAlign::Stretch),
                 ));
-                // DE-wide plate rim padding (style.surface.backplate.padding);
-                // the pane gap is the SplitPane's, seeded from backplate_gap.
+                // DE-wide plate rim padding (style.surface.root plate.padding);
+                // the pane gap is the SplitPane's, seeded from root_plate_gap.
                 let plate_pad = cce_ui::layout::root_plate_padding();
                 // The File dropdown nests into the window's top-left corner:
                 // equal gap to the left and top edges, so its corner_frame
@@ -1935,8 +1935,8 @@ impl Application for DataEditorApp {
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
 
-        // The dissolved root Backplate's plate — its exact legacy paint: page-low background
-        // at the active backplate opacity, config corner radius (Backplate::color /
+        // The dissolved root plate container's plate — its exact legacy paint: page-low background
+        // at the active root plate opacity, config corner radius (the old `Backplate::color` /
         // corner_radius defaults; this window set no border/bevel).
         {
             use cce_ui::scene::layout::Rect;
