@@ -2485,6 +2485,11 @@ impl Application for DataEditorApp {
         }
     }
 
+    /// Tab walks the plates and wells (cce-ui's navigation in plate terms).
+    fn plate_navigation(&self) -> bool {
+        true
+    }
+
     fn handle_key_input(&mut self, event: &KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         self.ctrl_pressed = event.ctrl;
         self.ui_context.ctrl_pressed = event.ctrl;
