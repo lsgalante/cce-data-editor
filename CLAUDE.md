@@ -66,7 +66,7 @@ loads (best-effort parse) with an error in the status bar.
 
 ### Type-driven inline value editors
 
-Nine editor widgets exist permanently as fields (`selected_*_editor`); exactly one is
+Eleven editor widgets exist permanently as fields (`selected_*_editor`); exactly one is
 positioned inline over the selected tree row, the rest are parked off-screen at
 `(-1000, -1000)` (the "hide" convention — there is no visibility flag). Which editor
 appears is decided in two places that must stay in agreement: the layout block in
@@ -91,6 +91,16 @@ appears is decided in two places that must stay in agreement: the layout block i
   the `(ramp)` annotation. Ramp-named keys (`ramp` / `*_ramp`) whose string
   value parses as a ramp spec get the treatment before the annotation exists
   (`overview_ramp` shipped unannotated).
+  A **unit annotation** (`px` / `mm` / `cm` / `in` / `pt`, e.g. `width=(mm)2.0`), or
+  any string value `cce_ui::units::Len` parses (`"2mm"` — which is exactly what
+  `kdl_to_json` makes of the annotated number) → a two-decimal `Spinbox`
+  (`selected_len_editor`) beside a unit `Dropdown` (`selected_unit_editor`).
+  Changing the number writes `"<n><unit>"`, which the KDL writer emits as
+  `(<unit>)<n>`; changing the unit keeps the LENGTH — converted through
+  `cce_ui::units::metric()`, the display's px-per-mm — and rewrites the number,
+  so 2 mm switched to inches reads 0.08 and a px value switched to mm reads what
+  it measures on this panel. Both sites (`display_list`, click) key off
+  `is_len_type`; the commit paths are `commit_len` / `sync_len_editors`.
 - **Key-name heuristics**: `font` / `*_font` / `*.font` → `FontSelector`; keybind-ish
   names (`key`, `shortcut`, `brightness_up`, …) → `KeybindRecorder`.
 - **Value shape**: `#`-prefixed string → `ColorSelector`, bool → `Checkbox`,
