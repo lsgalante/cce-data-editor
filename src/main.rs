@@ -2490,6 +2490,11 @@ impl Application for DataEditorApp {
         true
     }
 
+    /// The geometry is cached until the next rebuild — a moved focus ring needs one.
+    fn focus_stepped(&mut self) {
+        self.needs_rebuild = true;
+    }
+
     fn handle_key_input(&mut self, event: &KeyEvent, needs_rebuild: &mut bool) -> Option<Self::Message> {
         self.ctrl_pressed = event.ctrl;
         self.ui_context.ctrl_pressed = event.ctrl;
