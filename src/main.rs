@@ -2930,9 +2930,61 @@ fn main() {
 mod tests {
     use super::*;
 
+    /// One of every KDL shape the real configs are built from, so the tests
+    /// below exercise them without reading the machine's own `config.kdl`.
+    /// Reading the live file made the suite's result depend on whose machine
+    /// it ran on — and it did fail, for a year-old span bug nobody had hit
+    /// until a second `bevel_apps` entry appeared there (see
+    /// `span_of_an_indexed_element`). Anything the real config grows that
+    /// this does not cover belongs here, as a shape rather than a copy.
+    // `r##`, not `r#`: the colour literals below contain `"#`.
+    const FIXTURE: &str = r##"
+bell "dialog"
+duration (i64)6
+fonts {
+    monospace "Berkeley Mono"
+    serif "Circe Slab C"
+}
+input {
+    inertial inertial_pointer=(bool)true pointer_friction=(i64)96
+}
+layout {
+    bar_height (i64)24
+    list_bg_color (rgba)"#08080c4c"
+    status_bar light_source="top-left" window="top-left"
+}
+output {
+    eDP-1 scale=(f64)2.0
+}
+style {
+    control corner_radius=(i64)8 {
+        button background=(rgba)"#00000000" font="Berkeley Mono 14" padding=(i64)9
+        relief edge_knobs=(bevel)"0.500,0.500,0.500" width=(f64)9.3
+        tree border_color=(rgb)"#767686" opacity=(f64)0.8 open_search=(keybind)"ctrl+f"
+        window {
+            gutter (mm)2.0
+        }
+    }
+    status {
+        background_color (rgba)"#12141c00"
+    }
+}
+window_manager {
+    // A comment between nodes: spans are byte offsets, so anything that
+    // shifts them belongs in here too.
+    touchpad_view_apps "Houdini FX"
+    center_on_spawn (bool)true
+    corner_shape (f64)4.5
+    light_source_position (radian)2.356194490192345
+    on_app_exit ("menu:focus_previous,overview,none")"focus_previous"
+    bevel_apps "claude-desktop" "com.anthropic.Claude"
+    rounded_apps "claude-desktop" "com.anthropic.Claude" "*chrome*"
+}
+"##;
+
     #[test]
     fn test_kdl_roundtrip() {
-        let content = std::fs::read_to_string(cce_ui::config::get_config_path()).unwrap();
+        let content = FIXTURE.to_string();
         let val = cce_ui::config::parse_kdl_to_json(&content);
         let mut flat = Vec::new();
         flatten_json(&val, "", &mut flat);
@@ -3005,17 +3057,34 @@ key_bindings {
         assert_eq!(span("key_bindings[0].key"), Some("key=\"q\""));
     }
 
+    /// Every key the editor lists must be findable in the text it came from
+    /// — that is what the tree/raw two-way selection rides on — so walk the
+    /// whole fixture rather than spot-checking it.
     #[test]
     fn test_kdl_span_lookup() {
-        let content = std::fs::read_to_string(cce_ui::config::get_config_path()).unwrap();
-        let val = cce_ui::config::parse_kdl_to_json(&content);
+        let content = FIXTURE;
+        let val = cce_ui::config::parse_kdl_to_json(content);
         let mut flat = Vec::new();
         flatten_json(&val, "", &mut flat);
-        
+        assert!(!flat.is_empty(), "the fixture should flatten to something");
+
         for (k, _) in &flat {
             let tokens = parse_path(k);
-            let span = find_kdl_span(&content, &tokens);
-            assert!(span.is_some(), "Should find span for path: {} with tokens: {:?}", k, tokens);
+            let span = find_kdl_span(content, &tokens);
+            let Some((start, end)) = span else {
+                panic!("Should find span for path: {} with tokens: {:?}", k, tokens);
+            };
+            // A span the editor can actually select with: in bounds, not
+            // empty, and on character boundaries (it is handed to
+            // byte_to_char_idx).
+            assert!(start < end, "empty span for {}: {:?}", k, span);
+            assert!(end <= content.len(), "span past the end for {}: {:?}", k, span);
+            assert!(
+                content.is_char_boundary(start) && content.is_char_boundary(end),
+                "span splits a character for {}: {:?}",
+                k,
+                span
+            );
         }
     }
 }
