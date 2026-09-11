@@ -81,6 +81,31 @@ fn char_to_byte_idx(content: &str, char_idx: usize) -> usize {
         .unwrap_or(content.len())
 }
 
+/// The span of everything a node says after its name: every positional
+/// argument, not just the first. The joined numeric multi-arg form is one
+/// value — `(vec2i)100 200` flattens to the single string "100 200" — so a
+/// span stopping after `100` highlighted half of it. Falls back to the first
+/// entry (a node carrying only properties) and then to the node itself (a
+/// node carrying nothing, e.g. a bare section name).
+fn node_value_span(node: &kdl::KdlNode) -> (usize, usize) {
+    let bounds = |e: &kdl::KdlEntry| {
+        let sp = e.span();
+        (sp.offset(), sp.offset() + sp.len())
+    };
+    let mut positional = node.entries().iter().filter(|e| e.name().is_none());
+    if let Some(first) = positional.next() {
+        let (start, mut end) = bounds(first);
+        for entry in positional {
+            end = bounds(entry).1;
+        }
+        return (start, end);
+    }
+    node.entries().first().map(bounds).unwrap_or_else(|| {
+        let sp = node.span();
+        (sp.offset(), sp.offset() + sp.len())
+    })
+}
+
 /// The spans of the array elements one node contributes to its name's
 /// flattened value, in order. Mirrors `kdl_to_json`: a multi-argument node
 /// whose arguments are all strings (`bevel_apps "a" "b"`) is a LIST, one
@@ -103,11 +128,7 @@ fn node_element_spans(node: &kdl::KdlNode) -> Vec<(usize, usize)> {
     {
         return entries.iter().map(span_of).collect();
     }
-    let span = entries.first().map(span_of).unwrap_or_else(|| {
-        let sp = node.span();
-        (sp.offset(), sp.offset() + sp.len())
-    });
-    vec![span]
+    vec![node_value_span(node)]
 }
 
 fn find_kdl_span(content: &str, tokens: &[PathToken]) -> Option<(usize, usize)> {
@@ -172,13 +193,7 @@ fn find_kdl_span_in_doc(doc: &kdl::KdlDocument, tokens: &[PathToken]) -> Option<
             } else {
                 let node = nodes.first()?;
                 if tokens.len() == 1 {
-                    if let Some(entry) = node.entries().first() {
-                        let span = entry.span();
-                        return Some((span.offset(), span.offset() + span.len()));
-                    } else {
-                        let span = node.span();
-                        return Some((span.offset(), span.offset() + span.len()));
-                    }
+                    return Some(node_value_span(node));
                 } else if tokens.len() == 2 {
                     if let PathToken::Key(prop_key) = &tokens[1] {
                         if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
@@ -3037,6 +3052,31 @@ window_manager {
         assert_eq!(slice("window_manager.bevel_apps[3]"), None);
         // Plain keys are untouched by the change.
         assert_eq!(slice("window_manager.gap"), Some("12"));
+    }
+
+    /// A joined multi-argument value is one value, so its span is all of it.
+    /// Stopping at the first argument highlighted `100` out of `100 200` —
+    /// and, for a repeated node, told the raw pane the wrong extent for the
+    /// element the tree had selected.
+    #[test]
+    fn span_of_a_joined_multi_arg() {
+        let content = "\
+style {
+    window {
+        position_default (vec2i)100 200
+    }
+}
+anchor (vec2i)1 2
+anchor (vec2i)3 4
+";
+        let slice = |path: &str| -> Option<&str> {
+            let (start, end) = find_kdl_span(content, &parse_path(path))?;
+            Some(content[start..end].trim())
+        };
+        assert_eq!(slice("style.window.position_default"), Some("(vec2i)100 200"));
+        // Repeated: each node is one element, and each element is all of it.
+        assert_eq!(slice("anchor[0]"), Some("(vec2i)1 2"));
+        assert_eq!(slice("anchor[1]"), Some("(vec2i)3 4"));
     }
 
     /// The other index shape: `key_bindings` children, where the index does
