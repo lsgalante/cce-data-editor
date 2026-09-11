@@ -59,6 +59,11 @@ fn parse_path(path: &str) -> Vec<PathToken> {
     tokens
 }
 
+/// How often the open file is compared against its on-disk state. The runner
+/// wakes an idle app once a second by itself, so this costs no extra frames;
+/// `idle_poll_interval` below pins that cadence rather than inheriting it.
+const DISK_POLL_EVERY: std::time::Duration = std::time::Duration::from_secs(1);
+
 /// KDL spans are byte offsets; the TextBox cursor/selection are char indices.
 /// Convert one to the other (clamping past-the-end offsets to the char count).
 fn byte_to_char_idx(content: &str, byte_idx: usize) -> usize {
@@ -425,7 +430,11 @@ struct DataEditorApp {
     disk_state: Option<(std::time::SystemTime, u64)>,
     disk_hash: u64,
     file_outdated: bool,
-    disk_poll: f32,
+    /// When the disk-sync watch below may run again. A wall clock, not an
+    /// accumulation of `tick`'s `dt`: `dt` is animation time, clamped to one
+    /// frame after an idle sleep, so an editor sitting idle — exactly when
+    /// another writer is the one touching the file — polled once a MINUTE.
+    disk_poll_at: std::time::Instant,
     // File pickers run on a thread and report back over the engine's message
     // channel (OpenPicked / SaveAsPicked) so the event loop keeps animating.
     msg_sender: calloop::channel::Sender<AppMessage>,
@@ -1005,7 +1014,7 @@ impl Application for DataEditorApp {
                 disk_state,
                 disk_hash,
                 file_outdated: false,
-                disk_poll: 0.0,
+                disk_poll_at: std::time::Instant::now(),
                 msg_sender: sender,
                 file_dialog_open: false,
                 width: 800,
@@ -1345,6 +1354,13 @@ impl Application for DataEditorApp {
         }
     }
 
+    /// The disk-sync watch in `tick` is work the runner cannot see — nothing
+    /// redraws until the file actually changes — so say how often the loop
+    /// must come back rather than relying on its default idle cap.
+    fn idle_poll_interval(&self) -> Option<std::time::Duration> {
+        Some(DISK_POLL_EVERY)
+    }
+
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
         if self.ui_context.tick(_dt) {
             *needs_rebuild = true;
@@ -1411,9 +1427,9 @@ impl Application for DataEditorApp {
         // against the recorded loaded/saved state. Another writer touched it:
         // reload in place when the in-memory document is clean, else raise the
         // outdated indicator and leave the local edits alone.
-        self.disk_poll += _dt;
-        if self.disk_poll >= 1.0 {
-            self.disk_poll = 0.0;
+        let now = std::time::Instant::now();
+        if now >= self.disk_poll_at {
+            self.disk_poll_at = now + DISK_POLL_EVERY;
             if let (Some(path), Some(recorded)) = (self.current_file_path.clone(), self.disk_state) {
                 let on_disk = std::fs::metadata(&path)
                     .ok()
