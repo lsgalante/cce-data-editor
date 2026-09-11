@@ -81,6 +81,35 @@ fn char_to_byte_idx(content: &str, char_idx: usize) -> usize {
         .unwrap_or(content.len())
 }
 
+/// The spans of the array elements one node contributes to its name's
+/// flattened value, in order. Mirrors `kdl_to_json`: a multi-argument node
+/// whose arguments are all strings (`bevel_apps "a" "b"`) is a LIST, one
+/// element per argument; everything else — a lone argument, the joined
+/// numeric multi-arg form (`(vec2i)100 200`), a node carrying properties —
+/// is a single element. Repeated nodes of the same name concatenate, so the
+/// caller walks them in document order.
+fn node_element_spans(node: &kdl::KdlNode) -> Vec<(usize, usize)> {
+    let span_of = |s: &kdl::KdlEntry| {
+        let sp = s.span();
+        (sp.offset(), sp.offset() + sp.len())
+    };
+    let entries = node.entries();
+    let has_props = entries.iter().any(|e| e.name().is_some());
+    if !has_props
+        && entries.len() > 1
+        && entries
+            .iter()
+            .all(|e| matches!(e.value(), kdl::KdlValue::String(_) | kdl::KdlValue::RawString(_)))
+    {
+        return entries.iter().map(span_of).collect();
+    }
+    let span = entries.first().map(span_of).unwrap_or_else(|| {
+        let sp = node.span();
+        (sp.offset(), sp.offset() + sp.len())
+    });
+    vec![span]
+}
+
 fn find_kdl_span(content: &str, tokens: &[PathToken]) -> Option<(usize, usize)> {
     let doc = content.parse::<kdl::KdlDocument>().ok()?;
     find_kdl_span_in_doc(&doc, tokens)
@@ -119,17 +148,24 @@ fn find_kdl_span_in_doc(doc: &kdl::KdlDocument, tokens: &[PathToken]) -> Option<
                             }
                         }
                     }
+                } else if tokens.len() == 2 {
+                    // The index addresses an element of the flattened value,
+                    // which is not the same as the n-th node: one node can
+                    // contribute several (a string list), and several nodes
+                    // concatenate. Walking the elements is what finds the
+                    // second entry of `bevel_apps "a" "b"` — indexing nodes
+                    // found nothing past [0], and answered [0] with the whole
+                    // line.
+                    return nodes.iter().flat_map(|n| node_element_spans(n)).nth(idx);
                 } else {
+                    // A deeper path means the element is an object, and only
+                    // a node with properties is one — so here the index IS
+                    // the node index.
                     let node = nodes.get(idx)?;
-                    if tokens.len() == 2 {
-                        let span = node.span();
-                        return Some((span.offset(), span.offset() + span.len()));
-                    } else {
-                        if let PathToken::Key(prop_key) = &tokens[2] {
-                            if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
-                                let span = entry.span();
-                                return Some((span.offset(), span.offset() + span.len()));
-                            }
+                    if let PathToken::Key(prop_key) = &tokens[2] {
+                        if let Some(entry) = node.entries().iter().find(|e| e.name().map(|id| id.value()) == Some(prop_key)) {
+                            let span = entry.span();
+                            return Some((span.offset(), span.offset() + span.len()));
                         }
                     }
                 }
@@ -2920,6 +2956,53 @@ mod tests {
             Ok(_) => println!("Parsed OK!"),
             Err(e) => panic!("Failed to parse generated KDL: {}", e),
         }
+    }
+
+    /// What `find_kdl_span` must return for an indexed path, pinned on a
+    /// fixture rather than the user's config: the earlier version indexed
+    /// NODES, so a string list answered `[0]` with its whole line and `[1]`
+    /// with nothing at all — the tree could not highlight the second app in
+    /// `bevel_apps`, and a click anywhere on that line selected `[0]`.
+    #[test]
+    fn span_of_an_indexed_element() {
+        let content = "\
+window_manager {
+    bevel_apps \"claude-desktop\" \"com.anthropic.Claude\"
+    bevel_apps \"latecomer\"
+    gap 12
+}
+";
+        let slice = |path: &str| -> Option<&str> {
+            let (start, end) = find_kdl_span(content, &parse_path(path))?;
+            Some(content[start..end].trim())
+        };
+        // Each argument of a string list is its own element...
+        assert_eq!(slice("window_manager.bevel_apps[0]"), Some("\"claude-desktop\""));
+        assert_eq!(slice("window_manager.bevel_apps[1]"), Some("\"com.anthropic.Claude\""));
+        // ...and a repeated node continues the same index space, because
+        // kdl_to_json concatenates the two lists.
+        assert_eq!(slice("window_manager.bevel_apps[2]"), Some("\"latecomer\""));
+        assert_eq!(slice("window_manager.bevel_apps[3]"), None);
+        // Plain keys are untouched by the change.
+        assert_eq!(slice("window_manager.gap"), Some("12"));
+    }
+
+    /// The other index shape: `key_bindings` children, where the index does
+    /// address the n-th node and a trailing key addresses one of its props.
+    #[test]
+    fn span_of_a_key_binding() {
+        let content = "\
+key_bindings {
+    bind key=\"q\" action=\"close\"
+    bind key=\"t\" action=\"new_tab\"
+}
+";
+        let span = |path: &str| -> Option<&str> {
+            let (start, end) = find_kdl_span(content, &parse_path(path))?;
+            Some(content[start..end].trim())
+        };
+        assert_eq!(span("key_bindings[1].action"), Some("action=\"new_tab\""));
+        assert_eq!(span("key_bindings[0].key"), Some("key=\"q\""));
     }
 
     #[test]
