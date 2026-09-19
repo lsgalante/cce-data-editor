@@ -12,7 +12,7 @@ checkout of `../cce-ui` must exist to build. The workspace-level
 `../cce-compositor/WORKSPACE.md` (when present) covers the whole desktop environment; commit
 in THIS repo, never at the workspace root.
 
-The entire app is **one file: `src/main.rs`** (~2200 lines) — a `DataEditorApp` struct
+The entire app is **one file: `src/main.rs`** (~3.1k lines) — a `DataEditorApp` struct
 implementing `cce_ui::engine::Application`, run by `cce_ui::engine::run::<DataEditorApp>()`.
 There are no modules to navigate; use the section landmarks below.
 
@@ -21,7 +21,7 @@ There are no modules to navigate; use the section landmarks below.
 ```sh
 cargo build --release          # binary lands in ../target/release/ (shared workspace target)
 cargo run -- <file.kdl>        # optional file argument auto-loads on startup
-make install                   # installs ../target/release/cce-data-editor to ~/.local/bin
+make install                   # release build, then `ccebuild install --no-build cce-data-editor`
 cargo test                     # see caveat below
 ```
 
