@@ -2144,8 +2144,7 @@ impl Application for DataEditorApp {
                 // perimeter follows the silhouette arc.
                 pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
                     rect,
-                    color: plate_color,
-                    blur: false,
+                    material: cce_ui::scene::Material::opaque(plate_color),
                     window_corners: (true, true, true, true),
                     depth: cce_ui::layout::bevel_width(),
                 });
