@@ -2229,7 +2229,6 @@ impl Application for DataEditorApp {
         // carry bounds equal to their overlay rect: clips them to the plate and exempts
         // them from the dl-text occlusion clamp (the is-overlay-text convention).
         {
-            use cce_ui::scene::layout::Rect;
             for &pop_id in &self.ui_context.active_popovers {
                 let Some(pop_ptr) = self.ui_context.tree.get_ptr(pop_id) else { continue };
                 let popover = unsafe { &*pop_ptr };
@@ -2241,32 +2240,10 @@ impl Application for DataEditorApp {
                 // per-label bounds — no flattening collector round-trip.
                 popover.render_popover(&mut pc);
             }
-            if cce_ui::widget::context_menu::is_visible() {
-                let menu_bounds = Some([
-                    cce_ui::widget::context_menu::x(),
-                    cce_ui::widget::context_menu::y(),
-                    cce_ui::widget::context_menu::x() + cce_ui::widget::context_menu::w(),
-                    cce_ui::widget::context_menu::y() + cce_ui::widget::context_menu::h(),
-                ]);
-                for (qx, qy, qw, qh, qc) in cce_ui::widget::context_menu::extra_quads() {
-                    pc.quad(Rect { x: qx, y: qy, width: qw, height: qh }, qc);
-                }
-                // The menu font's family: a TextLabel carries only a size, so
-                // `None` here drew the menu in the default sans while the
-                // labels had been laid out in the configured face.
-                let (menu_family, _) = cce_ui::widget::context_menu::label_font();
-                for label in cce_ui::widget::context_menu::text_labels() {
-                    pc.text_with(
-                        label.text.clone(),
-                        label.x,
-                        label.y,
-                        label.font_size,
-                        label.color,
-                        Some(menu_family.clone()),
-                        menu_bounds,
-                    );
-                }
-            }
+            // The lit plate and the menu font in one call — the flat
+            // `extra_quads` look was the pre-frost menu the other apps
+            // have moved off.
+            cce_ui::widget::context_menu::paint_with_labels(&mut pc);
         }
 
         Some(pc.finish())
