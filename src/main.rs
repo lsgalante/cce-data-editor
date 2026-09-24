@@ -1797,9 +1797,10 @@ impl Application for DataEditorApp {
                 let root = arena.insert(LayoutBox::container(
                     Style::column().cross_align(CrossAlign::Stretch),
                 ));
-                // DE-wide plate rim padding (style.surface.root plate.padding);
-                // the pane gap is the SplitPane's, seeded from root_plate_gap.
-                let plate_pad = cce_ui::layout::root_plate_padding();
+                // The window-edge inset (the root plate's roll plus one
+                // padding); the pane gap is the SplitPane's, seeded from
+                // root_plate_gap.
+                let plate_pad = cce_ui::layout::root_plate_inset();
                 // The File dropdown nests into the window's top-left corner:
                 // equal gap to the left and top edges, so its corner_frame
                 // adjustment (below) rounds it concentric with the plate.
