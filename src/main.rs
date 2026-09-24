@@ -2125,31 +2125,22 @@ impl Application for DataEditorApp {
 
         let mut pc = cce_ui::scene::paint::PaintCtx::new();
 
-        // The dissolved root plate container's plate — its exact legacy paint: page-low background
-        // at the active root plate opacity, config corner radius (the old `Backplate::color` /
-        // corner_radius defaults; this window set no border/bevel).
+        // The standard root plate (cce-ui `PlateSpec::window`): one glass slab,
+        // the fill plus a rolled, lit perimeter. The menubar and statusbar then
+        // sink into this surface as steps (see their with_recess), so the whole
+        // window reads as a single piece with varying depth rather than stacked
+        // opaque bars. A square-cornered config (silhouette radius 0) gets the
+        // flat fill the plate would degenerate to anyway.
         {
             use cce_ui::scene::layout::Rect;
-            let mut plate_color = cce_ui::color::page_low_color();
-            if plate_color[3] > 0.001 {
-                plate_color[3] = cce_ui::color::root_plate_opacity();
-            }
-            let rect = Rect { x: 0.0, y: 0.0, width: self.width as f32, height: self.height as f32 };
-            let radius = cce_ui::layout::window_silhouette_radius();
-            if radius > 0.1 {
-                // One glass slab: the fill plus a rolled, lit perimeter. The menubar and
-                // statusbar then sink into this surface as steps (see their with_recess),
-                // so the whole window reads as a single piece with varying depth rather
-                // than stacked opaque bars. PlateSpec (cce-ui RFC 7b): the
-                // perimeter follows the silhouette arc.
-                pc.plate_spec(&cce_ui::scene::paint::PlateSpec {
-                    rect,
-                    material: cce_ui::scene::Material::opaque(plate_color),
-                    window_corners: (true, true, true, true),
-                    depth: cce_ui::layout::bevel_width(),
-                });
-            } else if plate_color[3] > 0.001 {
-                pc.quad(rect, plate_color);
+            let (w, h) = (self.width as f32, self.height as f32);
+            if cce_ui::layout::window_silhouette_radius() > 0.1 {
+                pc.root_plate(w, h);
+            } else {
+                let plate_color = cce_ui::color::page_low_color();
+                if plate_color[3] > 0.001 {
+                    pc.quad(Rect { x: 0.0, y: 0.0, width: w, height: h }, plate_color);
+                }
             }
         }
 
