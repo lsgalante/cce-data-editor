@@ -748,9 +748,10 @@ impl DataEditorApp {
         let home = std::env::var("HOME").unwrap_or_default();
         if let Some(child) = self.bevel_child.as_mut() {
             if matches!(child.try_wait(), Ok(None)) {
-                let ccectl = format!("{home}/.local/bin/ccectl");
-                let ccectl = if std::path::Path::new(&ccectl).exists() { ccectl } else { "ccectl".to_string() };
-                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-relief"]).spawn();
+                // Off the UI thread: the round trip is bounded, not free.
+                std::thread::spawn(|| {
+                    let _ = cce_ui::ipc::focus_window("cce-relief");
+                });
                 return;
             }
             self.bevel_child = None;
@@ -810,9 +811,10 @@ impl DataEditorApp {
         let home = std::env::var("HOME").unwrap_or_default();
         if let Some(child) = self.ramp_child.as_mut() {
             if matches!(child.try_wait(), Ok(None)) {
-                let ccectl = format!("{home}/.local/bin/ccectl");
-                let ccectl = if std::path::Path::new(&ccectl).exists() { ccectl } else { "ccectl".to_string() };
-                let _ = std::process::Command::new(ccectl).args(["focus-window", "cce-ramp"]).spawn();
+                // Off the UI thread: the round trip is bounded, not free.
+                std::thread::spawn(|| {
+                    let _ = cce_ui::ipc::focus_window("cce-ramp");
+                });
                 return;
             }
             self.ramp_child = None;
