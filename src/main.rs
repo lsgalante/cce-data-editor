@@ -937,7 +937,7 @@ impl Application for DataEditorApp {
         );
         let selected_keybind_editor = KeybindRecorder::new(String::new());
         let selected_bool_editor = Checkbox::new();
-        let selected_button_editor = Button::new(0.0, 0.0, 125.0, 26.0).with_label("Send Test");
+        let selected_button_editor = Button::new(0.0, 0.0, 125.0, cce_ui::layout::button_height()).with_label("Send Test");
         let selected_bevel_editor = cce_ui::widget::BevelPreview::new();
         let selected_ramp_editor = cce_ui::widget::RampPreview::new();
 
@@ -1010,7 +1010,7 @@ impl Application for DataEditorApp {
         dropdown_options.push("-".to_string());
         dropdown_options.push("Exit".to_string());
         let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("File");
-        btn_open.set_rect(10.0, 8.0, 70.0, 26.0);
+        btn_open.set_rect(10.0, 8.0, 70.0, cce_ui::layout::dropdown_height());
 
         let mut tree_list = TreeList::new();
         let keys_to_anno: Vec<String> = flat_keys.iter().map(|(k, _)| k.clone()).collect();
@@ -1807,12 +1807,13 @@ impl Application for DataEditorApp {
                 // equal gap to the left and top edges, so its corner_frame
                 // adjustment (below) rounds it concentric with the plate.
                 let menu_gap = 8.0;
+                let menu_h = cce_ui::layout::dropdown_height();
                 let top_bar = arena.insert(LayoutBox::container({
                     let mut s = Style::row().height(Length::Fixed(42.0));
-                    s.padding = Edges { left: menu_gap, right: plate_pad, top: menu_gap, bottom: 42.0 - menu_gap - 26.0 };
+                    s.padding = Edges { left: menu_gap, right: plate_pad, top: menu_gap, bottom: 42.0 - menu_gap - menu_h };
                     s
                 }));
-                let menu_leaf = arena.insert(LayoutBox::leaf(Style::row(), LSize::new(70.0, 26.0)));
+                let menu_leaf = arena.insert(LayoutBox::leaf(Style::row(), LSize::new(70.0, menu_h)));
                 let content = arena.insert(LayoutBox::container({
                     let mut s = Style::row()
                         .grow(1.0)
@@ -1862,7 +1863,17 @@ impl Application for DataEditorApp {
 
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
-                if let Some((row_x, row_y, _row_w, _row_h)) = self.tree_list.get_row_rect(selected_idx) {
+                if let Some((row_x, row_y, _row_w, row_h)) = self.tree_list.get_row_rect(selected_idx) {
+                    // Each editor at its own toolkit control height, centred
+                    // on the tree row.
+                    let at = |h: f32| row_y + (row_h - h) / 2.0;
+                    let btn_h = cce_ui::layout::button_height();
+                    let tb_h = cce_ui::layout::textbox_height();
+                    let sb_h = cce_ui::layout::spinbox_height();
+                    let dd_h = cce_ui::layout::dropdown_height();
+                    let tg_h = cce_ui::layout::toggle_height();
+                    let cs_h = cce_ui::layout::color_selector_height();
+                    let fs_h = cce_ui::layout::font_selector_height();
                     let val = &self.flat_keys[selected_idx].1;
                     let key_name = &self.flat_keys[selected_idx].0;
                     let is_font_type = key_name == "font" || key_name.ends_with("_font") || key_name.ends_with(".font");
@@ -1935,8 +1946,8 @@ impl Application for DataEditorApp {
                         if let Some(len) = len_of(val) {
                             self.sync_len_editors(len);
                         }
-                        self.selected_len_editor.set_rect(row_x + 245.0, row_y + 1.0, 70.0, 26.0);
-                        self.selected_unit_editor.set_rect(row_x + 319.0, row_y + 1.0, 54.0, 26.0);
+                        self.selected_len_editor.set_rect(row_x + 245.0, at(sb_h), 70.0, sb_h);
+                        self.selected_unit_editor.set_rect(row_x + 319.0, at(dd_h), 54.0, dd_h);
                         self.selected_choice_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -1997,7 +2008,7 @@ impl Application for DataEditorApp {
                         } else {
                             self.selected_choice_editor.selected = 0;
                         }
-                        self.selected_choice_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_choice_editor.set_rect(row_x + 245.0, at(dd_h), 125.0, dd_h);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2011,7 +2022,7 @@ impl Application for DataEditorApp {
                             _ => "Trigger".to_string(),
                         };
                         self.selected_button_editor.base_mut().label = Some(val_str);
-                        self.selected_button_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.selected_button_editor.set_rect(row_x + 245.0, at(btn_h), 125.0, btn_h);
                         self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2029,7 +2040,7 @@ impl Application for DataEditorApp {
                                 _ => String::new(),
                             };
                             self.selected_keybind_editor.value = val_str;
-                            self.selected_keybind_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                            self.selected_keybind_editor.set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
                             self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2040,36 +2051,36 @@ impl Application for DataEditorApp {
                             if let serde_json::Value::String(s) = val {
                                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 if s.starts_with('#') {
-                                    self.selected_color_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_color_editor.set_rect(row_x + 245.0, at(cs_h), 125.0, cs_h);
                                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 } else if is_font_type {
-                                    self.selected_font_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_font_editor.set_rect(row_x + 245.0, at(fs_h), 125.0, fs_h);
                                     self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 } else {
-                                    self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                    self.selected_value_editor.set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
                                     self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 }
                             } else if val.is_i64() {
                                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.selected_spinbox_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                self.selected_spinbox_editor.set_rect(row_x + 245.0, at(sb_h), 125.0, sb_h);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else if val.is_boolean() {
-                                self.selected_bool_editor.set_rect(row_x + 245.0, row_y + 1.0, 26.0, 26.0);
+                                self.selected_bool_editor.set_rect(row_x + 245.0, at(tg_h), tg_h, tg_h);
                                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_value_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else {
                                 self.selected_bool_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.selected_value_editor.set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                                self.selected_value_editor.set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
                                 self.selected_color_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_spinbox_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.selected_font_editor.set_rect(-1000.0, -1000.0, 1.0, 1.0);
