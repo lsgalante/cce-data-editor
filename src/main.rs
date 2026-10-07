@@ -1740,26 +1740,23 @@ impl Application for DataEditorApp {
             // The root plate container is DISSOLVED (Phase 6): top-level widgets register directly
             // (parentless) and the window plate is emitted below as prims. The splitter still
             // owns its two panes.
-            let self_ptr = self as *mut Self;
-            unsafe {
-                self.ui_context.register_widget(self.btn_open.base().id(), (*self_ptr).btn_open.as_ptr_mut());
-                self.ui_context.register_widget(self.tree_list.base().id(), (*self_ptr).tree_list.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_value_editor.base().id(), (*self_ptr).selected_value_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_color_editor.base().id(), (*self_ptr).selected_color_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_spinbox_editor.base().id(), (*self_ptr).selected_spinbox_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_font_editor.base().id(), (*self_ptr).selected_font_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_choice_editor.base().id(), (*self_ptr).selected_choice_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_len_editor.base().id(), (*self_ptr).selected_len_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_unit_editor.base().id(), (*self_ptr).selected_unit_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_keybind_editor.base().id(), (*self_ptr).selected_keybind_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_bool_editor.base().id(), (*self_ptr).selected_bool_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_button_editor.base().id(), (*self_ptr).selected_button_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_bevel_editor.base().id(), (*self_ptr).selected_bevel_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.selected_ramp_editor.base().id(), (*self_ptr).selected_ramp_editor.as_ptr_mut());
-                self.ui_context.register_widget(self.menubar.id(), (*self_ptr).menubar.as_ptr_mut());
-                self.ui_context.register_widget(self.statusbar.base().id(), (*self_ptr).statusbar.as_ptr_mut());
-                self.ui_context.register_widget(self.raw_json_editor.base().id(), (*self_ptr).raw_json_editor.as_ptr_mut());
-            }
+            self.ui_context.register_host(&mut self.btn_open);
+            self.ui_context.register_host(&mut self.tree_list);
+            self.ui_context.register_host(&mut self.selected_value_editor);
+            self.ui_context.register_host(&mut self.selected_color_editor);
+            self.ui_context.register_host(&mut self.selected_spinbox_editor);
+            self.ui_context.register_host(&mut self.selected_font_editor);
+            self.ui_context.register_host(&mut self.selected_choice_editor);
+            self.ui_context.register_host(&mut self.selected_len_editor);
+            self.ui_context.register_host(&mut self.selected_unit_editor);
+            self.ui_context.register_host(&mut self.selected_keybind_editor);
+            self.ui_context.register_host(&mut self.selected_bool_editor);
+            self.ui_context.register_host(&mut self.selected_button_editor);
+            self.ui_context.register_host(&mut self.selected_bevel_editor);
+            self.ui_context.register_host(&mut self.selected_ramp_editor);
+            self.ui_context.register_host(&mut self.menubar);
+            self.ui_context.register_host(&mut self.statusbar);
+            self.ui_context.register_host(&mut self.raw_json_editor);
             self.ui_context.rebuild_spatial_grid();
         }
 
