@@ -2625,16 +2625,16 @@ impl Application for DataEditorApp {
             let in_raw = px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
             
             if !in_raw {
-                self.raw_json_editor.unfocus();
-                self.selected_value_editor.unfocus();
-                self.selected_color_editor.unfocus();
-                self.selected_spinbox_editor.unfocus();
-                self.selected_font_editor.unfocus();
-                self.selected_choice_editor.unfocus();
-                self.selected_len_editor.unfocus();
-                self.selected_unit_editor.unfocus();
-                self.selected_keybind_editor.unfocus();
-                self.tree_list.unfocus();
+                self.ui_context.unfocus_widget(&mut self.raw_json_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_value_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_color_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_spinbox_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_font_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_choice_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_len_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_unit_editor);
+                self.ui_context.unfocus_widget(&mut self.selected_keybind_editor);
+                self.ui_context.unfocus_widget(&mut self.tree_list);
                 // The manual unfocus sweep above leaves ctx.focused_widget stale;
                 // clear it so focus-derived state (the tree rim) sees reality.
                 self.ui_context.clear_focus();
