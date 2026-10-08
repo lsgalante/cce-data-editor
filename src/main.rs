@@ -2687,6 +2687,13 @@ impl Application for DataEditorApp {
         true
     }
 
+    /// The first app to publish its accessibility tree to screen readers (AT-SPI): a tree
+    /// list, text fields, a menubar and plate navigation already on — cce-ui's
+    /// rfc-accessibility-locale, phase 2.
+    fn publishes_accessibility(&self) -> bool {
+        true
+    }
+
     /// The geometry is cached until the next rebuild — a moved focus ring needs one.
     fn focus_stepped(&mut self) {
         self.needs_rebuild = true;
