@@ -1,4 +1,5 @@
 use wayland_client::QueueHandle;
+use cce_ui::widget::Owned;
 use cce_ui::cosmic_text::FontSystem;
 use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
@@ -425,7 +426,7 @@ struct DataEditorApp {
     keys: DataEditorKeys,
 
     // Toolbar Buttons
-    btn_open: cce_ui::widget::Adapted<Dropdown>,
+    btn_open: Owned<cce_ui::widget::Adapted<Dropdown>>,
 
     // Left Panel Form Edit
     flat_keys: Vec<(String, serde_json::Value)>,
@@ -433,28 +434,28 @@ struct DataEditorApp {
     /// A `--select <flat.path>` from the CLI, waiting for the first laid-out
     /// frame (the tree's viewport height) before it can select and scroll.
     pending_select: Option<String>,
-    tree_list: cce_ui::widget::Adapted<TreeList>,
+    tree_list: Owned<cce_ui::widget::Adapted<TreeList>>,
 
     // Edit Value input
-    selected_value_editor: cce_ui::widget::Adapted<TextBox>,
-    selected_color_editor: cce_ui::widget::Adapted<ColorSelector>,
-    selected_spinbox_editor: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
-    selected_font_editor: cce_ui::widget::Adapted<FontSelector>,
-    selected_choice_editor: cce_ui::widget::Adapted<Dropdown>,
+    selected_value_editor: Owned<cce_ui::widget::Adapted<TextBox>>,
+    selected_color_editor: Owned<cce_ui::widget::Adapted<ColorSelector>>,
+    selected_spinbox_editor: Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>,
+    selected_font_editor: Owned<cce_ui::widget::Adapted<FontSelector>>,
+    selected_choice_editor: Owned<cce_ui::widget::Adapted<Dropdown>>,
     /// A unit-bearing length — a `(mm)`/`(px)`/`(cm)`/`(in)`/`(pt)` annotation,
     /// or any string `cce_ui::units::Len` parses — edits as a two-decimal
     /// spinbox for the number beside a dropdown for the unit. Switching the
     /// unit keeps the LENGTH (converted through the process metric) and
     /// changes the number, so 2 mm shown in inches reads 0.08.
-    selected_len_editor: cce_ui::widget::Adapted<cce_ui::widget::Spinbox>,
-    selected_unit_editor: cce_ui::widget::Adapted<Dropdown>,
-    selected_keybind_editor: cce_ui::widget::Adapted<KeybindRecorder>,
-    selected_bool_editor: cce_ui::widget::Adapted<Checkbox>,
-    selected_button_editor: cce_ui::widget::Adapted<cce_ui::widget::Button>,
-    selected_bevel_editor: cce_ui::widget::Adapted<cce_ui::widget::BevelPreview>,
+    selected_len_editor: Owned<cce_ui::widget::Adapted<cce_ui::widget::Spinbox>>,
+    selected_unit_editor: Owned<cce_ui::widget::Adapted<Dropdown>>,
+    selected_keybind_editor: Owned<cce_ui::widget::Adapted<KeybindRecorder>>,
+    selected_bool_editor: Owned<cce_ui::widget::Adapted<Checkbox>>,
+    selected_button_editor: Owned<cce_ui::widget::Adapted<cce_ui::widget::Button>>,
+    selected_bevel_editor: Owned<cce_ui::widget::Adapted<cce_ui::widget::BevelPreview>>,
     /// The (ramp) type's inline preview — the spec's curve; clicking opens
     /// cce-ramp --key on the selected key.
-    selected_ramp_editor: cce_ui::widget::Adapted<cce_ui::widget::RampPreview>,
+    selected_ramp_editor: Owned<cce_ui::widget::Adapted<cce_ui::widget::RampPreview>>,
     /// A cce-relief child spawned from the (bevel) preview: kept so a second
     /// click refocuses it (try_wait reaps an exited one) instead of piling
     /// up editors.
@@ -463,7 +464,7 @@ struct DataEditorApp {
     ramp_child: Option<std::process::Child>,
 
     // Right Panel Raw Json
-    raw_json_editor: cce_ui::widget::Adapted<TextBox>,
+    raw_json_editor: Owned<cce_ui::widget::Adapted<TextBox>>,
 
     // App state
     current_file_path: Option<std::path::PathBuf>,
@@ -492,8 +493,8 @@ struct DataEditorApp {
     file_dialog_open: bool,
 
     // UI state
-    menubar: cce_ui::widget::Adapted<MenuBar>,
-    statusbar: cce_ui::widget::Adapted<StatusBar>,
+    menubar: Owned<cce_ui::widget::Adapted<MenuBar>>,
+    statusbar: Owned<cce_ui::widget::Adapted<StatusBar>>,
     width: u32,
     height: u32,
     scale_factor: f64,
@@ -1039,28 +1040,28 @@ impl Application for DataEditorApp {
 
             Self {
                 keys: DataEditorKeys::load(),
-                menubar,
-                statusbar,
-                btn_open,
+                menubar: Owned::new(menubar),
+                statusbar: Owned::new(statusbar),
+                btn_open: Owned::new(btn_open),
                 flat_keys,
                 selected_key_idx: None,
                 pending_select,
-                tree_list,
-                selected_value_editor,
-                selected_color_editor,
-                selected_spinbox_editor,
-                selected_font_editor,
-                selected_choice_editor,
-                selected_len_editor,
-                selected_unit_editor,
-                selected_keybind_editor,
-                selected_bool_editor,
-                selected_button_editor,
-                selected_bevel_editor,
-                selected_ramp_editor,
+                tree_list: Owned::new(tree_list),
+                selected_value_editor: Owned::new(selected_value_editor),
+                selected_color_editor: Owned::new(selected_color_editor),
+                selected_spinbox_editor: Owned::new(selected_spinbox_editor),
+                selected_font_editor: Owned::new(selected_font_editor),
+                selected_choice_editor: Owned::new(selected_choice_editor),
+                selected_len_editor: Owned::new(selected_len_editor),
+                selected_unit_editor: Owned::new(selected_unit_editor),
+                selected_keybind_editor: Owned::new(selected_keybind_editor),
+                selected_bool_editor: Owned::new(selected_bool_editor),
+                selected_button_editor: Owned::new(selected_button_editor),
+                selected_bevel_editor: Owned::new(selected_bevel_editor),
+                selected_ramp_editor: Owned::new(selected_ramp_editor),
                 bevel_child: None,
                 ramp_child: None,
-                raw_json_editor,
+                raw_json_editor: Owned::new(raw_json_editor),
                 current_file_path,
                 status_message: None,
                 overflow_now: 0,
