@@ -870,6 +870,37 @@ impl DataEditorApp {
     /// The pre-frame widget-state refresh — everything `rebuild_text_items` did EXCEPT
     /// building TextItems (all rendered text is display-list prims now: widget text from the
     /// paint walk, the toolbar file label from `display_list` directly).
+    /// The value cell shows only the editor for the selected key's type; the rest are
+    /// parked off the window (`set_rect(-1000, …)` above). A parked editor is also HIDDEN,
+    /// so it is no Tab stop and not in the accessibility tree — parked alone, every one of
+    /// them was both — and the shown one is named after the key it edits, since its label
+    /// is the key column beside it, not one of its own.
+    fn sync_editor_presence(&mut self) {
+        let key = self.selected_key_idx.and_then(|i| self.flat_keys.get(i)).map(|(k, _)| k.clone());
+        let value = key.as_ref().map(|k| format!("Value of {k}"));
+        let unit = key.as_ref().map(|k| format!("Unit of {k}"));
+        macro_rules! present {
+            ($w:expr, $name:expr) => {{
+                let shown = WidgetHost::rect(&*$w).0 > -999.0;
+                WidgetHost::set_visible(&mut $w, shown);
+                $w.set_accessible_name($name);
+            }};
+        }
+        present!(self.selected_value_editor, value.as_deref());
+        present!(self.selected_color_editor, value.as_deref());
+        present!(self.selected_spinbox_editor, value.as_deref());
+        present!(self.selected_font_editor, value.as_deref());
+        present!(self.selected_choice_editor, value.as_deref());
+        present!(self.selected_len_editor, value.as_deref());
+        present!(self.selected_unit_editor, unit.as_deref());
+        present!(self.selected_keybind_editor, value.as_deref());
+        present!(self.selected_bool_editor, value.as_deref());
+        present!(self.selected_bevel_editor, value.as_deref());
+        present!(self.selected_ramp_editor, value.as_deref());
+        // The test button keeps its own label ("Send Test").
+        present!(self.selected_button_editor, None);
+    }
+
     fn refresh_widget_text(&mut self) {
         self.rebuild_tree();
         // Glyph-advance shaping — load-bearing for cursor↔pixel mapping in the editors.
@@ -949,6 +980,7 @@ impl Application for DataEditorApp {
             .with_max_width(None);
         raw_json_editor.font_family = "monospace".to_string();
         raw_json_editor.font_size = 13.0;
+        raw_json_editor.set_accessible_name(Some("KDL source"));
 
         // Auto-load argument path if passed. `--select <flat.path>` deep-links
         // to a key (or section prefix) once the first frame has laid out.
@@ -1013,8 +1045,10 @@ impl Application for DataEditorApp {
         dropdown_options.push("Exit".to_string());
         let mut btn_open = Dropdown::new(dropdown_options, 0).with_custom_display_text("File");
         btn_open.set_rect(10.0, 8.0, 70.0, cce_ui::layout::dropdown_height());
+        btn_open.set_accessible_name(Some("File"));
 
         let mut tree_list = TreeList::new();
+        tree_list.set_accessible_name(Some("Keys"));
         let keys_to_anno: Vec<String> = flat_keys.iter().map(|(k, _)| k.clone()).collect();
         let cached_annotations = cce_ui::config::get_kdl_type_annotations(&raw_json_editor.text, &keys_to_anno);
         tree_list.annotations = cached_annotations.clone();
@@ -2117,6 +2151,7 @@ impl Application for DataEditorApp {
             
 
             
+            self.sync_editor_presence();
             self.refresh_widget_text();
             self.ui_context.rebuild_spatial_grid();
             self.needs_rebuild = false;
@@ -2987,6 +3022,38 @@ window_manager {
     rounded_apps "claude-desktop" "com.anthropic.Claude" "*chrome*"
 }
 "##;
+
+    /// Only the editor for the selected key's type reaches a screen reader, named after the
+    /// key it edits; the rest are parked and hidden. Until 2026-10-08 a parked editor was
+    /// only moved off the window, which the accessibility tree took as on screen, so every
+    /// one of them was in it, unnamed.
+    #[test]
+    fn only_the_selected_keys_editor_is_in_the_accessibility_tree() {
+        use cce_ui::engine::Application;
+        let (tx, _rx) = calloop::channel::channel();
+        let mut app = DataEditorApp::create(tx.into());
+        app.raw_json_editor.text = FIXTURE.to_string();
+        let val = cce_ui::config::parse_kdl_to_json(FIXTURE);
+        app.flat_keys.clear();
+        flatten_json(&val, "", &mut app.flat_keys);
+        app.tree_list.set_flat_keys(app.flat_keys.clone());
+        let named = |app: &mut DataEditorApp| -> Vec<String> {
+            app.needs_rebuild = true;
+            let _ = app.display_list(cce_ui::engine::LogicalSize { width: 1200.0, height: 800.0 }, 1.0);
+            let tree = cce_ui::a11y::app_tree(app, 1.0);
+            tree.nodes.iter().filter_map(|(_, n)| n.label().map(str::to_string)).collect()
+        };
+
+        let names = named(&mut app);
+        assert!(["File", "Keys", "KDL source"].iter().all(|n| names.iter().any(|m| m == n)), "{names:?}");
+        assert!(!names.iter().any(|n| n.starts_with("Value of")), "no key selected, no editor: {names:?}");
+
+        app.selected_key_idx = app.flat_keys.iter().position(|(k, _)| k == "duration");
+        let names = named(&mut app);
+        let editors: Vec<&String> = names.iter().filter(|n| n.starts_with("Value of") || n.starts_with("Unit of")).collect();
+        assert_eq!(editors, ["Value of duration"], "{names:?}");
+        assert!(!names.iter().any(|n| n == "Send Test"), "the parked test button is not in it: {names:?}");
+    }
 
     #[test]
     fn test_kdl_roundtrip() {
