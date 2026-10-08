@@ -1,7 +1,6 @@
-use wayland_client::QueueHandle;
 use cce_ui::widget::Owned;
 use cce_ui::cosmic_text::FontSystem;
-use cce_ui::engine::{Application, EngineState, LogicalPosition, LogicalSize, WindowSettings};
+use cce_ui::engine::{Application, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, WidgetHost,
     TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
@@ -918,7 +917,9 @@ impl Application for DataEditorApp {
         self.ui_context.drag_allowed_at(px, py)
     }
 
-    fn new(_qh: &QueueHandle<EngineState<Self>>, sender: calloop::channel::Sender<Self::Message>) -> Self {
+    fn create(sender: cce_ui::engine::AppSender<Self::Message>) -> Self {
+        // The app keeps calloop's sender; `AppSender` converts into it.
+        let sender: calloop::channel::Sender<Self::Message> = sender.into();
         println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
 
 
