@@ -1813,8 +1813,8 @@ impl Application for DataEditorApp {
         // rim sized to an overhanging popover). Frame coords == surface
         // coords; the only obligation is laying out against the frame.
         let ov = self.overflow_now as f32;
-        let frame_w = (size.width as f32 - ov).max(1.0);
-        let frame_h = (size.height as f32 - ov).max(1.0);
+        let frame_w = (size.width - ov).max(1.0);
+        let frame_h = (size.height - ov).max(1.0);
         let size_changed = self.width != frame_w as u32 || self.height != frame_h as u32 || self.scale_factor != scale;
         if self.needs_rebuild || size_changed {
             self.width = frame_w as u32;
@@ -2299,8 +2299,8 @@ impl Application for DataEditorApp {
 
     fn handle_pointer_move(&mut self, pos: LogicalPosition, needs_rebuild: &mut bool) {
         let mut changed = false;
-        let px = pos.x as f32;
-        let py = pos.y as f32;
+        let px = pos.x;
+        let py = pos.y;
 
         if self.split.cursor_moved(px, py) {
             changed = true;
@@ -2342,8 +2342,8 @@ impl Application for DataEditorApp {
         println!("[DEBUG] handle_mouse_input: button={:?}, state={:?}, pos=({:.1}, {:.1})", button, state, pos.x, pos.y);
         let mut changed = false;
         let mut msg_out = None;
-        let px = pos.x as f32;
-        let py = pos.y as f32;
+        let px = pos.x;
+        let py = pos.y;
 
         // Routed dispatch (Phase 6ac): one MouseButton event through the router per
         // root — presses are hit-gated per widget, releases delivered everywhere, drag
@@ -2690,10 +2690,10 @@ impl Application for DataEditorApp {
     }
 
     fn handle_mouse_wheel(&mut self, delta: &MouseScrollDelta, pos: LogicalPosition, needs_rebuild: &mut bool) {
-        let px = pos.x as f32;
-        let py = pos.y as f32;
+        let px = pos.x;
+        let py = pos.y;
         // Routed dispatch (Phase 6ac): hit-scoped per root, like the legacy direct calls.
-        let wheel_ev = cce_ui::widget::Event::MouseWheel { delta: delta.clone(), x: px, y: py, local_x: px, local_y: py };
+        let wheel_ev = cce_ui::widget::Event::MouseWheel { delta: *delta, x: px, y: py, local_x: px, local_y: py };
         if self.ui_context.propagate_event(&wheel_ev, self.tree_list.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
