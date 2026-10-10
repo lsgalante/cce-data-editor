@@ -6,6 +6,8 @@ use cce_ui::widget::{
     TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
     KeybindRecorder, MenuBar, StatusBar, Checkbox
 };
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone)]
 enum AppMessage {
@@ -41,6 +43,19 @@ fn spawn_detached(mut cmd: std::process::Command) -> std::io::Result<()> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+/// [`spawn_detached`], plus a flag that reads `true` until the child exits:
+/// the reaper thread clears it once `wait` returns.
+fn spawn_watched(mut cmd: std::process::Command) -> std::io::Result<Arc<AtomicBool>> {
+    let mut child = cmd.spawn()?;
+    let running = Arc::new(AtomicBool::new(true));
+    let flag = running.clone();
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        flag.store(false, Ordering::Release);
+    });
+    Ok(running)
 }
 
 fn parse_path(path: &str) -> Vec<PathToken> {
@@ -467,12 +482,14 @@ struct DataEditorApp {
     /// The (ramp) type's inline preview — the spec's curve; clicking opens
     /// cce-ramp --key on the selected key.
     selected_ramp_editor: Handle<cce_ui::widget::Adapted<cce_ui::widget::RampPreview>>,
-    /// A cce-relief child spawned from the (bevel) preview: kept so a second
-    /// click refocuses it (try_wait reaps an exited one) instead of piling
-    /// up editors.
-    bevel_child: Option<std::process::Child>,
-    /// Same lifecycle for the cce-ramp child of the (ramp) preview.
-    ramp_child: Option<std::process::Child>,
+    /// Whether the cce-relief spawned from the (bevel) preview is still
+    /// running, so a second click refocuses it instead of piling up editors.
+    /// A flag, not the Child: `spawn_watched`'s thread reaps the editor the
+    /// moment it closes. Holding the Child until the next click's `try_wait`
+    /// left a closed editor a zombie for as long as nobody clicked again.
+    bevel_running: Option<Arc<AtomicBool>>,
+    /// Same lifecycle for the cce-ramp of the (ramp) preview.
+    ramp_running: Option<Arc<AtomicBool>>,
 
     // Right Panel Raw Json
     raw_json_editor: Handle<cce_ui::widget::Adapted<TextBox>>,
@@ -758,15 +775,12 @@ impl DataEditorApp {
     /// key and deliberately did not change with it.
     fn open_bevel_editor(&mut self) {
         let home = std::env::var("HOME").unwrap_or_default();
-        if let Some(child) = self.bevel_child.as_mut() {
-            if matches!(child.try_wait(), Ok(None)) {
-                // Off the UI thread: the round trip is bounded, not free.
-                std::thread::spawn(|| {
-                    let _ = cce_ui::ipc::focus_window("cce-relief");
-                });
-                return;
-            }
-            self.bevel_child = None;
+        if self.bevel_running.as_ref().is_some_and(|running| running.load(Ordering::Acquire)) {
+            // Off the UI thread: the round trip is bounded, not free.
+            std::thread::spawn(|| {
+                let _ = cce_ui::ipc::focus_window("cce-relief");
+            });
+            return;
         }
         let local = format!("{home}/.local/bin/cce-relief");
         let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-relief".to_string() };
@@ -810,8 +824,8 @@ impl DataEditorApp {
         if let Some(ref path) = self.current_file_path {
             command.args(["--config", &path.to_string_lossy()]);
         }
-        match command.spawn() {
-            Ok(child) => self.bevel_child = Some(child),
+        match spawn_watched(command) {
+            Ok(running) => self.bevel_running = Some(running),
             Err(e) => self.status_message = Some((format!("cce-relief launch failed: {e}"), true)),
         }
     }
@@ -821,15 +835,12 @@ impl DataEditorApp {
     /// `open_bevel_editor`'s lifecycle with cce-ramp's argv.
     fn open_ramp_editor(&mut self) {
         let home = std::env::var("HOME").unwrap_or_default();
-        if let Some(child) = self.ramp_child.as_mut() {
-            if matches!(child.try_wait(), Ok(None)) {
-                // Off the UI thread: the round trip is bounded, not free.
-                std::thread::spawn(|| {
-                    let _ = cce_ui::ipc::focus_window("cce-ramp");
-                });
-                return;
-            }
-            self.ramp_child = None;
+        if self.ramp_running.as_ref().is_some_and(|running| running.load(Ordering::Acquire)) {
+            // Off the UI thread: the round trip is bounded, not free.
+            std::thread::spawn(|| {
+                let _ = cce_ui::ipc::focus_window("cce-ramp");
+            });
+            return;
         }
         let Some(idx) = self.selected_key_idx else { return };
         let key = self.flat_keys[idx].0.clone();
@@ -856,8 +867,8 @@ impl DataEditorApp {
         if let Some(ref path) = self.current_file_path {
             command.args(["--config", &path.to_string_lossy()]);
         }
-        match command.spawn() {
-            Ok(child) => self.ramp_child = Some(child),
+        match spawn_watched(command) {
+            Ok(running) => self.ramp_running = Some(running),
             Err(e) => self.status_message = Some((format!("cce-ramp launch failed: {e}"), true)),
         }
     }
@@ -1109,8 +1120,8 @@ impl Application for DataEditorApp {
                 selected_button_editor: ui_context.insert(selected_button_editor),
                 selected_bevel_editor: ui_context.insert(selected_bevel_editor),
                 selected_ramp_editor: ui_context.insert(selected_ramp_editor),
-                bevel_child: None,
-                ramp_child: None,
+                bevel_running: None,
+                ramp_running: None,
                 raw_json_editor: ui_context.insert(raw_json_editor),
                 current_file_path,
                 status_message: None,
@@ -3014,6 +3025,18 @@ window_manager {
     rounded_apps "claude-desktop" "com.anthropic.Claude" "*chrome*"
 }
 "##;
+
+    /// The editor flag clears on its own once the child exits: the reaper
+    /// thread waited on it, so nothing is left for a later click to collect.
+    #[test]
+    fn spawn_watched_clears_once_the_child_exits() {
+        let running = spawn_watched(std::process::Command::new("true")).expect("spawn true");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while running.load(Ordering::Acquire) {
+            assert!(std::time::Instant::now() < deadline, "flag never cleared");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 
     /// Only the editor for the selected key's type reaches a screen reader, named after the
     /// key it edits; the rest are parked and hidden. Until 2026-10-08 a parked editor was
