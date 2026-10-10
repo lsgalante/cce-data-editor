@@ -1,4 +1,5 @@
 use cce_ui::widget::Handle;
+use cce_ui::process::spawn_detached;
 use cce_ui::cosmic_text::FontSystem;
 use cce_ui::engine::{Application, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
@@ -33,19 +34,21 @@ enum PathToken {
     Index(usize),
 }
 
-/// Spawn `cmd` and reap it on a background thread, so the child never lingers
-/// as a zombie once it exits. The same helper cce-mail, cce-files, cce-terminal
-/// and cce-system-interface each keep; cce-ui's shared `process::spawn_detached`
-/// went away in cce-ui 4e94236.
-fn spawn_detached(mut cmd: std::process::Command) -> std::io::Result<()> {
-    let mut child = cmd.spawn()?;
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+/// Ask the compositor to open `app_id`'s next window at the pointer — which
+/// is on the clicked preview, so at the control — instead of its remembered
+/// spot. One-shot, best-effort (`place-next` is consumed at the map; ignored
+/// off-cce), the same pattern as ColorSelector's picker spawn. Each round
+/// trip is bounded: this runs on the click.
+fn place_next_at_pointer(app_id: &str) {
+    use cce_ui::ipc::ctl::{self, Request};
+    const REPLY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+    let Ok(reply) = ctl::request(&Request::PointerLocation, Some(REPLY_TIMEOUT)) else { return };
+    let Some((x, y)) = ctl::parse_pointer_location(&reply) else { return };
+    let place = Request::PlaceNext { app_id: app_id.to_string(), x: x.round(), y: y.round(), cell: false };
+    let _ = ctl::request(&place, Some(REPLY_TIMEOUT));
 }
 
-/// [`spawn_detached`], plus a flag that reads `true` until the child exits:
+/// [`spawn_detached`](cce_ui::process::spawn_detached), plus a flag that reads `true` until the child exits:
 /// the reaper thread clears it once `wait` returns.
 fn spawn_watched(mut cmd: std::process::Command) -> std::io::Result<Arc<AtomicBool>> {
     let mut child = cmd.spawn()?;
@@ -789,20 +792,7 @@ impl DataEditorApp {
         // so its location IS the control's location. One-shot, best-effort
         // (`place-next` consumed at the map; ignored off-cce) — the same
         // pattern as ColorSelector's picker spawn.
-        if let Ok(reply) = cce_ui::ipc::send_command("cce", "pointer-location") {
-            let mut px = None;
-            let mut py = None;
-            for tok in reply.split_whitespace() {
-                if let Some(v) = tok.strip_prefix("x=") {
-                    px = v.parse::<f64>().ok();
-                } else if let Some(v) = tok.strip_prefix("y=") {
-                    py = v.parse::<f64>().ok();
-                }
-            }
-            if let (Some(x), Some(y)) = (px, py) {
-                let _ = cce_ui::ipc::send_command("cce", &format!("place-next cce-relief {x:.0} {y:.0}"));
-            }
-        }
+        place_next_at_pointer("cce-relief");
         let mut command = std::process::Command::new(&cmd);
         // A relief-valued key (the (relief) annotation, or a line_relief key
         // still in integer form) targets its own single value: cce-relief
@@ -848,20 +838,7 @@ impl DataEditorApp {
         let cmd = if std::path::Path::new(&local).exists() { local } else { "cce-ramp".to_string() };
         // Open at this control, not the remembered spot — the pointer is on
         // the preview right now (see open_bevel_editor).
-        if let Ok(reply) = cce_ui::ipc::send_command("cce", "pointer-location") {
-            let mut px = None;
-            let mut py = None;
-            for tok in reply.split_whitespace() {
-                if let Some(v) = tok.strip_prefix("x=") {
-                    px = v.parse::<f64>().ok();
-                } else if let Some(v) = tok.strip_prefix("y=") {
-                    py = v.parse::<f64>().ok();
-                }
-            }
-            if let (Some(x), Some(y)) = (px, py) {
-                let _ = cce_ui::ipc::send_command("cce", &format!("place-next cce-ramp {x:.0} {y:.0}"));
-            }
-        }
+        place_next_at_pointer("cce-ramp");
         let mut command = std::process::Command::new(&cmd);
         command.args(["--key", &key]);
         if let Some(ref path) = self.current_file_path {
