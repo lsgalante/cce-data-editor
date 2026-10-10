@@ -31,6 +31,18 @@ enum PathToken {
     Index(usize),
 }
 
+/// Spawn `cmd` and reap it on a background thread, so the child never lingers
+/// as a zombie once it exits. The same helper cce-mail, cce-files, cce-terminal
+/// and cce-system-interface each keep; cce-ui's shared `process::spawn_detached`
+/// went away in cce-ui 4e94236.
+fn spawn_detached(mut cmd: std::process::Command) -> std::io::Result<()> {
+    let mut child = cmd.spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 fn parse_path(path: &str) -> Vec<PathToken> {
     let mut tokens = Vec::new();
     for part in path.split('.') {
@@ -2467,14 +2479,13 @@ impl Application for DataEditorApp {
                         if annotation.starts_with("button:") {
                             let cmd = annotation.trim_start_matches("button:");
                             println!("[DEBUG] Visual button clicked, running command: {}", cmd);
-                            std::process::Command::new("sh")
-                                .args(["-c", cmd])
-                                .spawn()
-                                .ok();
+                            let mut sh = std::process::Command::new("sh");
+                            sh.args(["-c", cmd]);
+                            let _ = spawn_detached(sh);
                         } else if key_name == "notifications.test_notification" {
                             println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
-                            std::process::Command::new("busctl")
-                                .args([
+                            let mut busctl = std::process::Command::new("busctl");
+                            busctl.args([
                                     "--user",
                                     "call",
                                     "org.freedesktop.Notifications",
@@ -2490,9 +2501,8 @@ impl Application for DataEditorApp {
                                     "0",
                                     "0",
                                     "-1",
-                                ])
-                                .spawn()
-                                .ok();
+                                ]);
+                            let _ = spawn_detached(busctl);
                         }
                     }
                 }
