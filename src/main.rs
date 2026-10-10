@@ -952,7 +952,7 @@ impl Application for DataEditorApp {
     fn create(sender: cce_ui::engine::AppSender<Self::Message>) -> Self {
         // The app keeps calloop's sender; `AppSender` converts into it.
         let sender: calloop::channel::Sender<Self::Message> = sender.into();
-        println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::colors::dropdown_background_color());
+        println!("RUNNING DATA EDITOR DROPDOWN COLOR: {:?}", cce_ui::color::dropdown_background_color());
 
 
 
