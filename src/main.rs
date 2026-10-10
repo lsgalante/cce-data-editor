@@ -2183,7 +2183,7 @@ impl Application for DataEditorApp {
             let tops: [&dyn cce_ui::widget::WidgetHost; 3] =
                 [&self.ui_context[self.menubar], &self.ui_context[self.statusbar], &self.ui_context[self.btn_open]];
             for top in tops {
-                cce_ui::scene::painter::paint_root_into(&self.ui_context, top, &mut pc);
+                cce_ui::widget::painter::paint_root_into(&self.ui_context, top, &mut pc);
             }
             {
                 use cce_ui::scene::layout::Rect;
@@ -2193,7 +2193,7 @@ impl Application for DataEditorApp {
             {
                 let panes: [&dyn cce_ui::widget::WidgetHost; 2] = [&self.ui_context[self.tree_list], &self.ui_context[self.raw_json_editor]];
                 for pane in panes {
-                    cce_ui::scene::painter::paint_root_into(&self.ui_context, pane, &mut pc);
+                    cce_ui::widget::painter::paint_root_into(&self.ui_context, pane, &mut pc);
                 }
             }
             // The inline value editors float OVER the tree's rows, so they have to be
@@ -2217,7 +2217,7 @@ impl Application for DataEditorApp {
                 &self.ui_context[self.selected_ramp_editor],
             ];
             for editor in editors {
-                cce_ui::scene::painter::paint_root_into(&self.ui_context, editor, &mut pc);
+                cce_ui::widget::painter::paint_root_into(&self.ui_context, editor, &mut pc);
             }
         }
 
@@ -3033,7 +3033,7 @@ window_manager {
         let named = |app: &mut DataEditorApp| -> Vec<String> {
             app.needs_rebuild = true;
             let _ = app.display_list(cce_ui::engine::LogicalSize { width: 1200.0, height: 800.0 }, 1.0);
-            let tree = cce_ui::a11y::app_tree(app, 1.0);
+            let tree = cce_ui::engine::accessibility_tree(app, 1.0);
             tree.nodes.iter().filter_map(|(_, n)| n.label().map(str::to_string)).collect()
         };
 
