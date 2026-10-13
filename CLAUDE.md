@@ -52,8 +52,9 @@ Edits flow one of two ways:
 - Tree/editor side: mutate `flat_keys[idx].1` → `update_raw_from_flat()` →
   `unflatten_json` → `json_to_kdl_string_with_annotations` regenerates the raw text
   (preserving KDL type annotations harvested from the current text).
-- Raw side: `raw_json_editor.take_change()` in `tick()` reparses the text and rebuilds
-  `flat_keys` (only if the KDL parses), re-resolving the selection by key name.
+- Raw side: the raw editor's commit (its `WidgetEvent::Changed`, in
+  `drain_widget_events`) reparses the text and rebuilds `flat_keys` (only if the KDL
+  parses), re-resolving the selection by key name.
 
 `parse_path` / `find_kdl_span` map a flat path to a byte span in the KDL source. This
 powers bidirectional selection sync: clicking a tree row highlights its span in the raw
@@ -107,9 +108,16 @@ appears is decided in two places that must stay in agreement: the layout block i
   integer → `Spinbox`, everything else → plain `TextBox` (values are entered as JSON;
   bare words fall back to strings).
 
-Editor commits are polled in `tick()` via each widget's `take_change()`, all funneling
-into the same mutate-`flat_keys` → `update_raw_from_flat()` → `sync_preview_selection()`
-sequence.
+Editor commits arrive as widget events: `drain_widget_events` sweeps
+`UiContext::take_events()` after every press, release, wheel and key, and once more in
+`tick()` (a font picked in `cce-fonts`, a drag's values, an assistive tool's), and runs
+each editor's branch in a fixed order, all funneling into the same mutate-`flat_keys` →
+`update_raw_from_flat()` → `sync_preview_selection()` sequence. The File menu's pick and
+the previews' and test button's clicks come the same way, so Enter / Space on a focused
+control acts at once. The `TreeList`'s requests (`take_clicked_item`, rename, new key,
+delete) carry payloads and stay polls where they were. A picked font is written only
+while the font field is still the selected key's editor: the picker answers seconds
+later, after the selection may have moved.
 
 ### cce-ui "Phase 6" conventions (post-container)
 

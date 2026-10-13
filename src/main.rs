@@ -5,7 +5,7 @@ use cce_ui::engine::{Application, LogicalPosition, LogicalSize, WindowSettings};
 use cce_ui::widget::{
     MouseButton, ElementState, MouseScrollDelta, KeyEvent, WidgetHost,
     TextBox, Button, Key, TreeList, TreeElement, ColorSelector, Spinbox, FontSelector, Dropdown,
-    KeybindRecorder, MenuBar, StatusBar, Checkbox
+    KeybindRecorder, MenuBar, StatusBar, Checkbox, WidgetEvent, WidgetId
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -766,6 +766,281 @@ impl DataEditorApp {
             }
         }
         self.sync_preview_selection();
+    }
+
+    /// What the widgets reported since the last sweep (`UiContext::take_events`), acted
+    /// on: the File menu's pick as the message the hook returns, a click on a preview or
+    /// the test button, and each editor's new value written into the document — the
+    /// editors in the order `tick` always read them. Run after every dispatch path —
+    /// press and release, wheel, key — and in `tick`, which catches what arrives between
+    /// events (a picked font, a drag's values, an assistive tool's). The TreeList's
+    /// requests are not events; they are polled where they were.
+    fn drain_widget_events(&mut self, needs_rebuild: &mut bool) -> Option<AppMessage> {
+        let events = self.ui_context.take_events();
+        if events.is_empty() {
+            return None;
+        }
+        let clicked = |id: WidgetId| events.iter().any(|(i, e)| *i == id && matches!(e, WidgetEvent::Clicked));
+        let changed = |id: WidgetId| events.iter().any(|(i, e)| *i == id && matches!(e, WidgetEvent::Changed));
+        // The editor the selected key's type puts in the value cell; the rest are parked.
+        let shown = |w: &dyn WidgetHost| w.rect().0 > -999.0;
+
+        let mut msg_out = None;
+        if changed(self.btn_open.id()) {
+            msg_out = self.file_menu_message();
+        }
+        if clicked(self.selected_bevel_editor.id()) {
+            self.open_bevel_editor();
+        }
+        if clicked(self.selected_ramp_editor.id()) {
+            self.open_ramp_editor();
+        }
+        if clicked(self.selected_button_editor.id()) {
+            self.run_test_button();
+        }
+
+        if changed(self.selected_value_editor.id()) {
+            let mut exit = false;
+            self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
+        }
+        if changed(self.selected_bool_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::Bool(self.ui_context[self.selected_bool_editor].checked());
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if changed(self.selected_color_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                let hex_str = self.ui_context[self.selected_color_editor].get_value_string().unwrap_or_else(|| format_hex_color(self.ui_context[self.selected_color_editor].color));
+                let new_val = serde_json::Value::String(hex_str.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if changed(self.selected_spinbox_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::Number(self.ui_context[self.selected_spinbox_editor].value.into());
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if changed(self.selected_len_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                if let Some(unit) = self.selected_unit() {
+                    let len = cce_ui::units::Len::new(self.ui_context[self.selected_len_editor].value as f32 / 100.0, unit);
+                    self.commit_len(idx, len);
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                }
+            }
+        }
+        if changed(self.selected_unit_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                if let (Some(cur), Some(unit)) = (len_of(&self.flat_keys[idx].1), self.selected_unit()) {
+                    // The same length in the new unit, through the display
+                    // metric — on an assumed metric that is the CSS 96 ppi
+                    // guess, which is all a conversion can honestly be there.
+                    let len = cur.convert(unit, &cce_ui::units::metric());
+                    self.commit_len(idx, len);
+                    *needs_rebuild = true;
+                    self.needs_rebuild = true;
+                }
+            }
+        }
+        // A family picked in cce-fonts, from the picker's exit (FontSelector raises it
+        // in its tick), seconds after the press that opened it. Written only while
+        // the selected key's editor is still the font field: a pick landing after
+        // the selection moved to a colour or a length would make it a font name.
+        if changed(self.selected_font_editor.id()) && shown(&self.ui_context[self.selected_font_editor]) {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::String(self.ui_context[self.selected_font_editor].font_family.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if changed(self.selected_choice_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                let selected_opt = self.ui_context[self.selected_choice_editor].options[self.ui_context[self.selected_choice_editor].selected].clone();
+                let new_val = match &self.flat_keys[idx].1 {
+                    serde_json::Value::Bool(_) => {
+                        serde_json::Value::Bool(selected_opt.parse::<bool>().unwrap_or(false))
+                    }
+                    serde_json::Value::Number(_) => {
+                        if let Ok(i) = selected_opt.parse::<i64>() {
+                            serde_json::Value::Number(i.into())
+                        } else if let Ok(f) = selected_opt.parse::<f64>() {
+                            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
+                        } else {
+                            serde_json::Value::String(selected_opt)
+                        }
+                    }
+                    _ => serde_json::Value::String(selected_opt),
+                };
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        // A chord the recorder committed (it records only while focused and armed).
+        if changed(self.selected_keybind_editor.id()) {
+            if let Some(idx) = self.selected_key_idx {
+                let new_val = serde_json::Value::String(self.ui_context[self.selected_keybind_editor].value.clone());
+                self.flat_keys[idx].1 = new_val;
+                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                self.ui_context[self.selected_value_editor].editing = false;
+                self.update_raw_from_flat();
+                self.sync_preview_selection();
+                *needs_rebuild = true;
+                self.needs_rebuild = true;
+            }
+        }
+        if changed(self.raw_json_editor.id()) {
+            let content = if self.ui_context[self.raw_json_editor].editing { &self.ui_context[self.raw_json_editor].edit_buffer } else { &self.ui_context[self.raw_json_editor].text };
+            if content.parse::<kdl::KdlDocument>().is_ok() {
+                let val = cce_ui::config::parse_kdl_to_json(content);
+                let mut new_flat = Vec::new();
+                flatten_json(&val, "", &mut new_flat);
+                
+                let selected_key = self.selected_key_idx.and_then(|idx| self.flat_keys.get(idx).map(|(k, _)| k.clone()));
+                self.flat_keys = new_flat;
+                
+                if let Some(k) = selected_key {
+                    self.selected_key_idx = self.flat_keys.iter().position(|(key, _)| key == &k);
+                    if let Some(idx) = self.selected_key_idx {
+                        self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
+                        if !self.ui_context[self.selected_value_editor].editing {
+                            self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
+                        }
+                        
+                        // Sync controls:
+                        let val = &self.flat_keys[idx].1;
+                        if let serde_json::Value::String(s) = val {
+                            if let Some(len) = cce_ui::units::Len::parse(s) {
+                                self.sync_len_editors(len);
+                            } else if let Some(c) = parse_hex_color(s) {
+                                self.ui_context[self.selected_color_editor].color = c;
+                            } else {
+                                self.ui_context[self.selected_font_editor].font_family = s.clone();
+                            }
+                        } else if let Some(num) = val.as_i64() {
+                            self.ui_context[self.selected_spinbox_editor].value = num as i32;
+                        } else if let serde_json::Value::Bool(b) = val {
+                            self.ui_context[self.selected_bool_editor].set_checked(*b);
+                        }
+                    } else {
+                        self.ui_context[self.selected_value_editor].text.clear();
+                        self.ui_context[self.selected_value_editor].edit_buffer.clear();
+                        self.ui_context[self.selected_value_editor].editing = false;
+                    }
+                }
+                if !self.ui_context[self.raw_json_editor].editing {
+                    self.sync_preview_selection();
+                }
+                self.status_message = None;
+            } else {
+                self.status_message = Some(("KDL syntax error in text editor".to_string(), true));
+            }
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
+        }
+        msg_out
+    }
+
+    /// The File menu's selected row as the message it sends.
+    fn file_menu_message(&self) -> Option<AppMessage> {
+        let menu = &self.ui_context[self.btn_open];
+        let option_text = menu.options.get(menu.selected)?;
+        println!("[DEBUG] File menu selected {option_text:?}");
+        Some(match option_text.as_str() {
+            "Save" => AppMessage::SaveDocument,
+            "Save As" => AppMessage::SaveDocumentAs,
+            "Refresh" => AppMessage::RefreshDocument,
+            "Format" => AppMessage::FormatJson,
+            "Exit" => AppMessage::Exit,
+            "Open..." | "Other" => AppMessage::OpenDocument,
+            _ => AppMessage::OpenRecent(std::path::PathBuf::from(option_text)),
+        })
+    }
+
+    /// A hook returns one message: the first, with the second sent on to `update`
+    /// rather than dropped.
+    fn join_messages(&self, first: Option<AppMessage>, second: Option<AppMessage>) -> Option<AppMessage> {
+        match (first, second) {
+            (Some(a), Some(b)) => {
+                let _ = self.msg_sender.send(b);
+                Some(a)
+            }
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// The test button's press: a `button:` annotation's command, or the test
+    /// notification for `notifications.test_notification`.
+    fn run_test_button(&mut self) {
+        if let Some(idx) = self.selected_key_idx {
+            let key_name = &self.flat_keys[idx].0;
+            if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.ui_context[self.raw_json_editor].text, key_name) {
+                if annotation.starts_with("button:") {
+                    let cmd = annotation.trim_start_matches("button:");
+                    println!("[DEBUG] Visual button clicked, running command: {}", cmd);
+                    let mut sh = std::process::Command::new("sh");
+                    sh.args(["-c", cmd]);
+                    let _ = spawn_detached(sh);
+                } else if key_name == "notifications.test_notification" {
+                    println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
+                    let mut busctl = std::process::Command::new("busctl");
+                    busctl.args([
+                        "--user",
+                        "call",
+                        "org.freedesktop.Notifications",
+                        "/org/freedesktop/Notifications",
+                        "org.freedesktop.Notifications",
+                        "Notify",
+                        "susssasa{sv}i",
+                        "cce-client",
+                        "0",
+                        "",
+                        "CCE Test Notification",
+                        "This is a test notification from the Data Editor.",
+                        "0",
+                        "0",
+                        "-1",
+                    ]);
+                    let _ = spawn_detached(busctl);
+                }
+            }
+        }
     }
 
     /// The (bevel) preview's click action: open the cce-relief material
@@ -1593,179 +1868,15 @@ impl Application for DataEditorApp {
             self.needs_rebuild = true;
         }
 
-        if self.ui_context[self.selected_value_editor].take_change() {
-            let mut exit = false;
-            self.update(AppMessage::ApplyValue, needs_rebuild, &mut exit);
-        }
-        if self.ui_context[self.selected_bool_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let new_val = serde_json::Value::Bool(self.ui_context[self.selected_bool_editor].checked());
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
-        if self.ui_context[self.selected_color_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let hex_str = self.ui_context[self.selected_color_editor].get_value_string().unwrap_or_else(|| format_hex_color(self.ui_context[self.selected_color_editor].color));
-                let new_val = serde_json::Value::String(hex_str.clone());
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
-        if self.ui_context[self.selected_spinbox_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let new_val = serde_json::Value::Number(self.ui_context[self.selected_spinbox_editor].value.into());
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
-        if self.ui_context[self.selected_len_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                if let Some(unit) = self.selected_unit() {
-                    let len = cce_ui::units::Len::new(self.ui_context[self.selected_len_editor].value as f32 / 100.0, unit);
-                    self.commit_len(idx, len);
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
-                }
-            }
-        }
-        if self.ui_context[self.selected_unit_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                if let (Some(cur), Some(unit)) = (len_of(&self.flat_keys[idx].1), self.selected_unit()) {
-                    // The same length in the new unit, through the display
-                    // metric — on an assumed metric that is the CSS 96 ppi
-                    // guess, which is all a conversion can honestly be there.
-                    let len = cur.convert(unit, &cce_ui::units::metric());
-                    self.commit_len(idx, len);
-                    *needs_rebuild = true;
-                    self.needs_rebuild = true;
-                }
-            }
-        }
-        if self.ui_context[self.selected_font_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let new_val = serde_json::Value::String(self.ui_context[self.selected_font_editor].font_family.clone());
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
-        if self.ui_context[self.selected_choice_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let selected_opt = self.ui_context[self.selected_choice_editor].options[self.ui_context[self.selected_choice_editor].selected].clone();
-                let new_val = match &self.flat_keys[idx].1 {
-                    serde_json::Value::Bool(_) => {
-                        serde_json::Value::Bool(selected_opt.parse::<bool>().unwrap_or(false))
-                    }
-                    serde_json::Value::Number(_) => {
-                        if let Ok(i) = selected_opt.parse::<i64>() {
-                            serde_json::Value::Number(i.into())
-                        } else if let Ok(f) = selected_opt.parse::<f64>() {
-                            serde_json::Value::Number(serde_json::Number::from_f64(f).unwrap())
-                        } else {
-                            serde_json::Value::String(selected_opt)
-                        }
-                    }
-                    _ => serde_json::Value::String(selected_opt),
-                };
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
         if self.ui_context.lend_h(self.selected_keybind_editor, |w, ctx| w.tick(_dt, ctx)).unwrap_or(false) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
         }
-        if self.ui_context[self.selected_keybind_editor].take_change() {
-            if let Some(idx) = self.selected_key_idx {
-                let new_val = serde_json::Value::String(self.ui_context[self.selected_keybind_editor].value.clone());
-                self.flat_keys[idx].1 = new_val;
-                self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                self.ui_context[self.selected_value_editor].editing = false;
-                self.update_raw_from_flat();
-                self.sync_preview_selection();
-                *needs_rebuild = true;
-                self.needs_rebuild = true;
-            }
-        }
-        if self.ui_context[self.raw_json_editor].take_change() {
-            let content = if self.ui_context[self.raw_json_editor].editing { &self.ui_context[self.raw_json_editor].edit_buffer } else { &self.ui_context[self.raw_json_editor].text };
-            if content.parse::<kdl::KdlDocument>().is_ok() {
-                let val = cce_ui::config::parse_kdl_to_json(content);
-                let mut new_flat = Vec::new();
-                flatten_json(&val, "", &mut new_flat);
-                
-                let selected_key = self.selected_key_idx.and_then(|idx| self.flat_keys.get(idx).map(|(k, _)| k.clone()));
-                self.flat_keys = new_flat;
-                
-                if let Some(k) = selected_key {
-                    self.selected_key_idx = self.flat_keys.iter().position(|(key, _)| key == &k);
-                    if let Some(idx) = self.selected_key_idx {
-                        self.ui_context[self.selected_value_editor].text = serde_json::to_string(&self.flat_keys[idx].1).unwrap_or_default();
-                        if !self.ui_context[self.selected_value_editor].editing {
-                            self.ui_context[self.selected_value_editor].edit_buffer = self.ui_context[self.selected_value_editor].text.clone();
-                        }
-                        
-                        // Sync controls:
-                        let val = &self.flat_keys[idx].1;
-                        if let serde_json::Value::String(s) = val {
-                            if let Some(len) = cce_ui::units::Len::parse(s) {
-                                self.sync_len_editors(len);
-                            } else if let Some(c) = parse_hex_color(s) {
-                                self.ui_context[self.selected_color_editor].color = c;
-                            } else {
-                                self.ui_context[self.selected_font_editor].font_family = s.clone();
-                            }
-                        } else if let Some(num) = val.as_i64() {
-                            self.ui_context[self.selected_spinbox_editor].value = num as i32;
-                        } else if let serde_json::Value::Bool(b) = val {
-                            self.ui_context[self.selected_bool_editor].set_checked(*b);
-                        }
-                    } else {
-                        self.ui_context[self.selected_value_editor].text.clear();
-                        self.ui_context[self.selected_value_editor].edit_buffer.clear();
-                        self.ui_context[self.selected_value_editor].editing = false;
-                    }
-                }
-                if !self.ui_context[self.raw_json_editor].editing {
-                    self.sync_preview_selection();
-                }
-                self.status_message = None;
-            } else {
-                self.status_message = Some(("KDL syntax error in text editor".to_string(), true));
-            }
-            *needs_rebuild = true;
-            self.needs_rebuild = true;
+
+        // What the editors reported: a picked font lands in the ticks above,
+        // a drag's values between frames (pointer moves are not swept).
+        if let Some(msg) = self.drain_widget_events(needs_rebuild) {
+            let _ = self.msg_sender.send(msg);
         }
     }
 
@@ -2356,6 +2467,9 @@ impl Application for DataEditorApp {
                 }
                 msg_out = Some(AppMessage::DeleteKey);
             }
+            // A row run into an editor (Paste into the value field) is its edit.
+            let drained = self.drain_widget_events(needs_rebuild);
+            msg_out = self.join_messages(msg_out, drained);
             if changed || msg_out.is_some() {
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
@@ -2366,45 +2480,9 @@ impl Application for DataEditorApp {
             return None;
         }
 
+        // The File menu's pick is drained at the end (`drain_widget_events`).
         if self.ui_context.propagate_event(&mouse_ev, self.btn_open.id()) {
             changed = true;
-            if self.ui_context[self.btn_open].take_change() {
-                let selected_idx = self.ui_context[self.btn_open].selected;
-                if selected_idx < self.ui_context[self.btn_open].options.len() {
-                    let option_text = &self.ui_context[self.btn_open].options[selected_idx];
-                    match option_text.as_str() {
-                        "Save" => {
-                            println!("[DEBUG] File menu selected 'Save', Dispatching SaveDocument");
-                            msg_out = Some(AppMessage::SaveDocument);
-                        }
-                        "Save As" => {
-                            println!("[DEBUG] File menu selected 'Save As', Dispatching SaveDocumentAs");
-                            msg_out = Some(AppMessage::SaveDocumentAs);
-                        }
-                        "Refresh" => {
-                            println!("[DEBUG] File menu selected 'Refresh', Dispatching RefreshDocument");
-                            msg_out = Some(AppMessage::RefreshDocument);
-                        }
-                        "Format" => {
-                            println!("[DEBUG] File menu selected 'Format', Dispatching FormatJson");
-                            msg_out = Some(AppMessage::FormatJson);
-                        }
-                        "Exit" => {
-                            println!("[DEBUG] File menu selected 'Exit', Dispatching Exit");
-                            msg_out = Some(AppMessage::Exit);
-                        }
-                        "Open..." | "Other" => {
-                            println!("[DEBUG] File menu selected 'Open...', Dispatching OpenDocument");
-                            msg_out = Some(AppMessage::OpenDocument);
-                        }
-                        _ => {
-                            let path = std::path::PathBuf::from(option_text);
-                            println!("[DEBUG] File menu selected recent file: {:?}", path);
-                            msg_out = Some(AppMessage::OpenRecent(path));
-                        }
-                    }
-                }
-            }
         }
         let mut editor_handled = false;
         if self.ui_context.propagate_event(&mouse_ev, self.selected_value_editor.id()) {
@@ -2443,58 +2521,20 @@ impl Application for DataEditorApp {
             changed = true;
             editor_handled = true;
         }
+        // The previews take a click on the press, the test button on the
+        // release (or Enter / Space); both are drained at the end
+        // (`drain_widget_events`).
         if self.ui_context.propagate_event(&mouse_ev, self.selected_bevel_editor.id()) {
             changed = true;
             editor_handled = true;
-            if state == ElementState::Pressed && self.ui_context[self.selected_bevel_editor].take_click() {
-                self.open_bevel_editor();
-            }
         }
         if self.ui_context.propagate_event(&mouse_ev, self.selected_ramp_editor.id()) {
             changed = true;
             editor_handled = true;
-            if state == ElementState::Pressed && self.ui_context[self.selected_ramp_editor].take_click() {
-                self.open_ramp_editor();
-            }
         }
         if self.ui_context.propagate_event(&mouse_ev, self.selected_button_editor.id()) {
             changed = true;
             editor_handled = true;
-            if state == ElementState::Released && self.ui_context[self.selected_button_editor].take_click() {
-                if let Some(idx) = self.selected_key_idx {
-                    let key_name = &self.flat_keys[idx].0;
-                    if let Some(annotation) = cce_ui::config::get_kdl_type_annotation(&self.ui_context[self.raw_json_editor].text, key_name) {
-                        if annotation.starts_with("button:") {
-                            let cmd = annotation.trim_start_matches("button:");
-                            println!("[DEBUG] Visual button clicked, running command: {}", cmd);
-                            let mut sh = std::process::Command::new("sh");
-                            sh.args(["-c", cmd]);
-                            let _ = spawn_detached(sh);
-                        } else if key_name == "notifications.test_notification" {
-                            println!("[DEBUG] Test notification button clicked, sending D-Bus notification");
-                            let mut busctl = std::process::Command::new("busctl");
-                            busctl.args([
-                                    "--user",
-                                    "call",
-                                    "org.freedesktop.Notifications",
-                                    "/org/freedesktop/Notifications",
-                                    "org.freedesktop.Notifications",
-                                    "Notify",
-                                    "susssasa{sv}i",
-                                    "cce-client",
-                                    "0",
-                                    "",
-                                    "CCE Test Notification",
-                                    "This is a test notification from the Data Editor.",
-                                    "0",
-                                    "0",
-                                    "-1",
-                                ]);
-                            let _ = spawn_detached(busctl);
-                        }
-                    }
-                }
-            }
         }
         if self.ui_context.propagate_event(&mouse_ev, self.raw_json_editor.id()) {
             changed = true;
@@ -2657,6 +2697,8 @@ impl Application for DataEditorApp {
             }
         }
 
+        let drained = self.drain_widget_events(needs_rebuild);
+        let msg_out = self.join_messages(msg_out, drained);
         self.sync_tree_focus_rim();
         if changed {
             *needs_rebuild = true;
@@ -2694,6 +2736,10 @@ impl Application for DataEditorApp {
         if self.ui_context.propagate_event(&wheel_ev, self.raw_json_editor.id()) {
             *needs_rebuild = true;
             self.needs_rebuild = true;
+        }
+        // A wheel steps a spinbox or a dropdown's choice.
+        if let Some(msg) = self.drain_widget_events(needs_rebuild) {
+            let _ = self.msg_sender.send(msg);
         }
     }
 
@@ -2817,33 +2863,19 @@ impl Application for DataEditorApp {
                     break;
                 }
             }
-            if handled {
-                if self.ui_context[self.btn_open].take_change() {
-                    let selected_idx = self.ui_context[self.btn_open].selected;
-                    if selected_idx < self.ui_context[self.btn_open].options.len() {
-                        let option_text = &self.ui_context[self.btn_open].options[selected_idx];
-                        match option_text.as_str() {
-                            "Save" => msg_out = Some(AppMessage::SaveDocument),
-                            "Save As" => msg_out = Some(AppMessage::SaveDocumentAs),
-                            "Refresh" => msg_out = Some(AppMessage::RefreshDocument),
-                            "Format" => msg_out = Some(AppMessage::FormatJson),
-                            "Exit" => msg_out = Some(AppMessage::Exit),
-                            "Open..." | "Other" => msg_out = Some(AppMessage::OpenDocument),
-                            _ => {
-                                msg_out = Some(AppMessage::OpenRecent(std::path::PathBuf::from(option_text)));
-                            }
-                        }
-                    }
-                }
-                if value_was_editing
-                    && event.state == ElementState::Pressed
-                    && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter)
-                {
-                    msg_out = Some(AppMessage::ApplyValue);
-                }
+            if handled
+                && value_was_editing
+                && event.state == ElementState::Pressed
+                && event.logical_key == Key::Named(cce_ui::widget::NamedKey::Enter)
+            {
+                msg_out = Some(AppMessage::ApplyValue);
             }
         }
 
+        // The File menu's pick by key, a focused editor's commit, Enter / Space
+        // on the focused test button: now, not at the next tick or click.
+        let drained = self.drain_widget_events(needs_rebuild);
+        let msg_out = self.join_messages(msg_out, drained);
         self.sync_tree_focus_rim();
         if handled {
             *needs_rebuild = true;
