@@ -2367,7 +2367,7 @@ impl Application for DataEditorApp {
                 if popover.popover_rect().is_none() {
                     continue;
                 }
-                // PaintCtx is a RenderTarget: the popover draws its REAL prims
+                // The popover paints into the frame's PaintCtx: its REAL prims
                 // (the dropdown's expanded inset-plate surface) with its own
                 // per-label bounds — no flattening collector round-trip.
                 popover.render_popover(&mut pc);
