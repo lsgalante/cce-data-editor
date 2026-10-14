@@ -125,9 +125,10 @@ This app tracks the current cce-ui architecture; mirror these patterns when touc
 code, and don't reintroduce the retired ones:
 
 - **No root container.** The root plate container and the `SplitBox` are dissolved.
-  Top-level widgets are parentless, registered once with
-  `ui_context.register_widget(id, ptr)` in the first `display_list` call, and painted
-  as separate roots via `cce_ui::scene::painter::paint_root_into` (shared borrows).
+  Top-level widgets are parentless: each is inserted into the `UiContext` when the app
+  is built (`ui_context.insert(w)`, which owns and registers it; the app keeps the
+  `Handle`), and painted as a separate root via
+  `cce_ui::widget::painter::paint_root_into` (shared borrows).
 - **Single paint path.** Everything renders through `display_list` into one `PaintCtx`
   — window plate quad, widget walk, splitter divider quad, the toolbar "File:" label,
   then popovers and the context menu drawn last directly into the list (the engine's
