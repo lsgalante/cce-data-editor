@@ -1023,6 +1023,9 @@ impl DataEditorApp {
                     busctl.args([
                         "--user",
                         "call",
+                        // The expiry below is "-1", which busctl would read as an
+                        // option without this.
+                        "--",
                         "org.freedesktop.Notifications",
                         "/org/freedesktop/Notifications",
                         "org.freedesktop.Notifications",
