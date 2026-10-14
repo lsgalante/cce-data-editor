@@ -1994,6 +1994,8 @@ impl Application for DataEditorApp {
             // Position the selected value editor inline inside the list if visible
             if let Some(selected_idx) = self.selected_key_idx {
                 if let Some((row_x, row_y, _row_w, row_h)) = self.ui_context[self.tree_list].get_row_rect(selected_idx) {
+                    // Where the tree draws a row's value: every inline editor starts there.
+                    let value_x = row_x + self.ui_context[self.tree_list].value_x();
                     // Each editor at its own toolkit control height, centred
                     // on the tree row.
                     let at = |h: f32| row_y + (row_h - h) / 2.0;
@@ -2076,8 +2078,8 @@ impl Application for DataEditorApp {
                         if let Some(len) = len_of(val) {
                             self.sync_len_editors(len);
                         }
-                        self.ui_context[self.selected_len_editor].set_rect(row_x + 245.0, at(sb_h), 70.0, sb_h);
-                        self.ui_context[self.selected_unit_editor].set_rect(row_x + 319.0, at(dd_h), 54.0, dd_h);
+                        self.ui_context[self.selected_len_editor].set_rect(value_x, at(sb_h), 70.0, sb_h);
+                        self.ui_context[self.selected_unit_editor].set_rect(value_x + 74.0, at(dd_h), 54.0, dd_h);
                         self.ui_context[self.selected_choice_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2101,7 +2103,7 @@ impl Application for DataEditorApp {
                         } else if let serde_json::Value::String(st) = val {
                             self.ui_context[self.selected_bevel_editor].set_knobs_str(st);
                         }
-                        self.ui_context[self.selected_bevel_editor].set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.ui_context[self.selected_bevel_editor].set_rect(value_x, row_y + 1.0, 125.0, 26.0);
                         self.ui_context[self.selected_choice_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2116,7 +2118,7 @@ impl Application for DataEditorApp {
                         if let serde_json::Value::String(st) = val {
                             self.ui_context[self.selected_ramp_editor].set_spec_str(st);
                         }
-                        self.ui_context[self.selected_ramp_editor].set_rect(row_x + 245.0, row_y + 1.0, 125.0, 26.0);
+                        self.ui_context[self.selected_ramp_editor].set_rect(value_x, row_y + 1.0, 125.0, 26.0);
                         self.ui_context[self.selected_choice_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2138,7 +2140,7 @@ impl Application for DataEditorApp {
                         } else {
                             self.ui_context[self.selected_choice_editor].selected = 0;
                         }
-                        self.ui_context[self.selected_choice_editor].set_rect(row_x + 245.0, at(dd_h), 125.0, dd_h);
+                        self.ui_context[self.selected_choice_editor].set_rect(value_x, at(dd_h), 125.0, dd_h);
                         self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2152,7 +2154,7 @@ impl Application for DataEditorApp {
                             _ => "Trigger".to_string(),
                         };
                         self.ui_context[self.selected_button_editor].base_mut().label = Some(val_str);
-                        self.ui_context[self.selected_button_editor].set_rect(row_x + 245.0, at(btn_h), 125.0, btn_h);
+                        self.ui_context[self.selected_button_editor].set_rect(value_x, at(btn_h), 125.0, btn_h);
                         self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                         self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2170,7 +2172,7 @@ impl Application for DataEditorApp {
                                 _ => String::new(),
                             };
                             self.ui_context[self.selected_keybind_editor].value = val_str;
-                            self.ui_context[self.selected_keybind_editor].set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
+                            self.ui_context[self.selected_keybind_editor].set_rect(value_x, at(tb_h), 125.0, tb_h);
                             self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
@@ -2181,36 +2183,36 @@ impl Application for DataEditorApp {
                             if let serde_json::Value::String(s) = val {
                                 self.ui_context[self.selected_bool_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 if s.starts_with('#') {
-                                    self.ui_context[self.selected_color_editor].set_rect(row_x + 245.0, at(cs_h), 125.0, cs_h);
+                                    self.ui_context[self.selected_color_editor].set_rect(value_x, at(cs_h), 125.0, cs_h);
                                     self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_value_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 } else if is_font_type {
-                                    self.ui_context[self.selected_font_editor].set_rect(row_x + 245.0, at(fs_h), 125.0, fs_h);
+                                    self.ui_context[self.selected_font_editor].set_rect(value_x, at(fs_h), 125.0, fs_h);
                                     self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_value_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 } else {
-                                    self.ui_context[self.selected_value_editor].set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
+                                    self.ui_context[self.selected_value_editor].set_rect(value_x, at(tb_h), 125.0, tb_h);
                                     self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                     self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 }
                             } else if val.is_i64() {
                                 self.ui_context[self.selected_bool_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.ui_context[self.selected_spinbox_editor].set_rect(row_x + 245.0, at(sb_h), 125.0, sb_h);
+                                self.ui_context[self.selected_spinbox_editor].set_rect(value_x, at(sb_h), 125.0, sb_h);
                                 self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_value_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else if val.is_boolean() {
-                                self.ui_context[self.selected_bool_editor].set_rect(row_x + 245.0, at(tg_h), tg_h, tg_h);
+                                self.ui_context[self.selected_bool_editor].set_rect(value_x, at(tg_h), tg_h, tg_h);
                                 self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_value_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                             } else {
                                 self.ui_context[self.selected_bool_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
-                                self.ui_context[self.selected_value_editor].set_rect(row_x + 245.0, at(tb_h), 125.0, tb_h);
+                                self.ui_context[self.selected_value_editor].set_rect(value_x, at(tb_h), 125.0, tb_h);
                                 self.ui_context[self.selected_color_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_spinbox_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
                                 self.ui_context[self.selected_font_editor].set_rect(-1000.0, -1000.0, 1.0, 1.0);
