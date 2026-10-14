@@ -12,7 +12,7 @@ checkout of `../cce-ui` must exist to build. The workspace-level
 `../cce-compositor/WORKSPACE.md` (when present) covers the whole desktop environment; commit
 in THIS repo, never at the workspace root.
 
-The entire app is **one file: `src/main.rs`** (~3.1k lines) — a `DataEditorApp` struct
+The entire app is **one file: `src/main.rs`** (~3.2k lines) — a `DataEditorApp` struct
 implementing `cce_ui::engine::Application`, run by `cce_ui::engine::run::<DataEditorApp>()`.
 There are no modules to navigate; use the section landmarks below.
 
