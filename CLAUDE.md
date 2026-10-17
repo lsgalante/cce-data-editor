@@ -12,9 +12,10 @@ checkout of `../cce-ui` must exist to build. The workspace-level
 `../cce-compositor/WORKSPACE.md` (when present) covers the whole desktop environment; commit
 in THIS repo, never at the workspace root.
 
-The entire app is **one file: `src/main.rs`** (~3.2k lines) — a `DataEditorApp` struct
-implementing `cce_ui::engine::Application`, run by `cce_ui::engine::run::<DataEditorApp>()`.
-There are no modules to navigate; use the section landmarks below.
+Nearly the entire app is **one file: `src/main.rs`** (~3.2k lines) — a `DataEditorApp`
+struct implementing `cce_ui::engine::Application`, run by
+`cce_ui::engine::run::<DataEditorApp>()`; use the section landmarks below. The one module
+beside it is `src/ui_state.rs`, the reopen-where-it-was state (below).
 
 ## Build, run, test
 
@@ -26,6 +27,15 @@ cargo test                     # see caveat below
 ```
 
 Running requires a live Wayland session (it is a raw Wayland client, not X11/toolkit).
+
+**A launch reopens where the last window was** (`src/ui_state.rs`): the open file, its
+selected key and the tree's scroll, kept in `cce_state_dir()/data-editor/state.json`
+(the file when one is opened or saved as, the key and scroll in `on_exit`). A restart
+(`ccectl restart-app`) replays the same argv, so the state records what argv asked for
+(file and `--select`): the same argv again, or none, restores the saved place even if
+another file was opened since; argv asking for anything else wins. A saved file that has
+gone is not reopened, and a restored key that has gone is skipped quietly (unlike
+`--select`'s status-bar error).
 
 **Test caveat**: both `#[cfg(test)]` tests read the user's real
 `~/.config/cce/config.kdl` (via `cce_ui::config::get_config_path()`) and

@@ -1,3 +1,5 @@
+mod ui_state;
+
 use cce_ui::widget::Handle;
 use cce_ui::process::spawn_detached;
 use cce_ui::cosmic_text::FontSystem;
@@ -463,6 +465,9 @@ struct DataEditorApp {
     /// A `--select <flat.path>` from the CLI, waiting for the first laid-out
     /// frame (the tree's viewport height) before it can select and scroll.
     pending_select: Option<String>,
+    /// The reopened file's selected key and tree scroll (`ui_state`), waiting
+    /// for the same first laid-out frame.
+    pending_restore: Option<(Option<String>, f32)>,
     tree_list: Handle<cce_ui::widget::Adapted<TreeList>>,
 
     // Edit Value input
@@ -647,6 +652,8 @@ impl DataEditorApp {
                 self.selected_key_idx = None;
                 self.ui_context[self.tree_list].scroll_box.scroll_y = 0.0;
                 self.current_file_path = Some(path.clone());
+                self.pending_restore = None;
+                ui_state::save(Some(&path), None, 0.0);
                 self.sync_preview_selection();
                 self.add_recent_file(&path);
                 self.note_disk_sync();
@@ -656,6 +663,20 @@ impl DataEditorApp {
                 Err(format!("Error opening: {}", e))
             }
         }
+    }
+
+    /// Record the open file, selected key and tree scroll for the next launch
+    /// (`ui_state`) — or the place still waiting to be restored, if the window
+    /// closes before its first frame.
+    fn save_place(&self) {
+        let (key, scroll_y) = match &self.pending_restore {
+            Some((key, scroll_y)) => (key.clone(), *scroll_y),
+            None => (
+                self.selected_key_idx.and_then(|idx| self.flat_keys.get(idx)).map(|(k, _)| k.clone()),
+                self.ui_context[self.tree_list].scroll_box.scroll_y,
+            ),
+        };
+        ui_state::save(self.current_file_path.as_deref(), key.as_deref(), scroll_y);
     }
 
     fn update_raw_from_flat(&mut self) {
@@ -1280,8 +1301,15 @@ impl Application for DataEditorApp {
             }
             i += 1;
         }
-        if let Some(arg) = file_arg {
-            let path = std::path::PathBuf::from(&arg);
+        // The same command line reopening opens what was open instead, at
+        // its key and scroll (`ui_state`).
+        let place = ui_state::initial(ui_state::Launched {
+            file: file_arg.map(|arg| ui_state::absolute(std::path::Path::new(&arg))),
+            select: pending_select,
+        });
+        let pending_select = place.select;
+        let mut pending_restore = None;
+        if let Some(path) = place.file {
             if path.exists() {
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     raw_json_editor.text = content;
@@ -1289,6 +1317,7 @@ impl Application for DataEditorApp {
                     current_file_path = Some(path);
                     let val = cce_ui::config::parse_kdl_to_json(&raw_json_editor.text);
                     flatten_json(&val, "", &mut flat_keys);
+                    pending_restore = Some((place.key, place.scroll_y));
                 }
             }
         }
@@ -1362,6 +1391,7 @@ impl Application for DataEditorApp {
                 flat_keys,
                 selected_key_idx: None,
                 pending_select,
+                pending_restore,
                 tree_list: ui_context.insert(tree_list),
                 selected_value_editor: ui_context.insert(selected_value_editor),
                 selected_color_editor: ui_context.insert(selected_color_editor),
@@ -1526,6 +1556,7 @@ impl Application for DataEditorApp {
                             self.ui_context[self.raw_json_editor].text = self.ui_context[self.raw_json_editor].edit_buffer.clone();
                         }
                         self.current_file_path = Some(path.clone());
+                        self.save_place();
                         self.status_message = Some((format!("Saved to {}", path.file_name().unwrap_or_default().to_string_lossy()), false));
                         self.add_recent_file(&path);
                         self.note_disk_sync();
@@ -1731,6 +1762,10 @@ impl Application for DataEditorApp {
         Some(DISK_POLL_EVERY)
     }
 
+    fn on_exit(&mut self) {
+        self.save_place();
+    }
+
     fn tick(&mut self, _dt: f32, needs_rebuild: &mut bool) {
         if self.ui_context.tick(_dt) {
             *needs_rebuild = true;
@@ -1766,6 +1801,18 @@ impl Application for DataEditorApp {
                 *needs_rebuild = true;
                 self.needs_rebuild = true;
             }
+        }
+        // The reopened file's tree scroll, then its key, the same way —
+        // quietly, since the key may have gone from the file since.
+        if self.pending_restore.is_some() && self.ui_context[self.tree_list].scroll_box.viewport_h > 0.0 {
+            let (key, scroll_y) = self.pending_restore.take().unwrap();
+            let scroll_box = &mut self.ui_context[self.tree_list].scroll_box;
+            scroll_box.scroll_y = scroll_y.clamp(0.0, (scroll_box.content_h - scroll_box.viewport_h).max(0.0));
+            if key.is_some_and(|k| self.ui_context[self.tree_list].select_and_show_key(&k)) {
+                self.adopt_tree_selection();
+            }
+            *needs_rebuild = true;
+            self.needs_rebuild = true;
         }
         // One-shot `--select` deep link. Deferred to here (not `new`) because
         // scroll_to_selected_key needs the tree's solved viewport height, which
